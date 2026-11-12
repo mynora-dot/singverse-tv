@@ -78,6 +78,6 @@ Go 是唯一业务写入方，SQL 位于 模块内嵌 SQL。播放记录、缺�
 
 ## 检查入口与当前限制
 
-前端使用 `make frontend-check` 和该工程的 `npm test`，Go 使用 `make go-backend-test`，SQLite 迁移与连接使用 `make db-sqlite-check`；MySQL 检查需要实际配置的 MySQL 实例。命令说明以 [根目录运行说明](../README.md#环境与命令) 与 `make help` 为准，这些入口不表示已经在本次环境全部通过。
+前端使用 `make frontend-check` 和该工程的 `npm test`，Go 使用 `make go-backend-test`，SQLite 迁移与连接使用 `make db-sqlite-check`；MySQL 检查需要实际配置的 MySQL 实例。命令说明以 [根目录运行说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/README.md#独立开发) 与 `make help` 为准，这些入口不表示已经在本次环境全部通过。
 
 没有实际客户端上报时，新增播放不会出现在统计中。自动化页面、受控 HTTP 和隔离数据库测试不能代替手机、TV、微信与 NAS 真机的一致性验收；实际验证范围以本次验证记录为准。

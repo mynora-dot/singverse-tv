@@ -29,19 +29,19 @@
 
 ## 媒体来源管理
 
-`singverse.openapi.json` 新增 `/api/v1/media-sources` 列表/创建及 `/{id}` 查询/更新/移除，继承管理员 Cookie 会话、同源及 CSRF。列表默认 20、最大 100，按创建时间倒序与 ID 升序；响应不含密码，编辑省略密码保留、空值字符串清除。来源通过 `parserProfileId` 绑定已保存方案，本地可通过 `/{id}/scan` 扫描并用 `/{id}/songs` 分页读取已保存歌曲数据；WebDAV 使用后台扫描任务，目录可列出不代表媒体可分段读取或播放；详见[媒体库说明](../../docs/media-library.md)。
+`singverse.openapi.json` 新增 `/api/v1/media-sources` 列表/创建及 `/{id}` 查询/更新/移除，继承管理员 Cookie 会话、同源及 CSRF。列表默认 20、最大 100，按创建时间倒序与 ID 升序；响应不含密码，编辑省略密码保留、空值字符串清除。来源通过 `parserProfileId` 绑定已保存方案，本地可通过 `/{id}/scan` 扫描并用 `/{id}/songs` 分页读取已保存歌曲数据；WebDAV 使用后台扫描任务，目录可列出不代表媒体可分段读取或播放；详见[媒体库说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/media-library.md)。
 
 ## 文件名解析规则配置与预览
 
 新增 GET/PUT `/api/v1/filename-parser/rules` 及 POST `/api/v1/filename-parser/preview`。管理员会话保护全部接口，写入及草稿预览需要 CSRF。配置整体更新使用 revision，冲突返回 409；400 规则校验通过 Problem Details 的 ruleId/ruleIndex/field 定位。
 
-预览传入 rules 使用草稿，省略或 null 使用保存配置，空数组明确禁用所有规则。正常未命中返回 200 和 selectedRule=null，不触发隐藏兜底；attempts 显示每条规则的状态、捕获与歧义候选。规则匹配不等于歌曲身份识别；详情见[规则说明](../../docs/filename-rules.md)。
+预览传入 rules 使用草稿，省略或 null 使用保存配置，空数组明确禁用所有规则。正常未命中返回 200 和 selectedRule=null，不触发隐藏兜底；attempts 显示每条规则的状态、捕获与歧义候选。规则匹配不等于歌曲身份识别；详情见[规则说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/filename-rules.md)。
 
 ## 共享规则库与解析方案
 
 新增 `/filename-parser/rule-definitions`、`/profiles` 的 GET/POST 与 `/{id}` PUT/DELETE，以及 `/profiles/preview`（均在 `/api/v1` 下）。所有读取/修改返回统一 Workspace，包含共享定义、引用方案、方案成员和全局 revision；创建后 changedId 指向新对象。DELETE 使用 revision 查询参数，引用保护 409 包含 referencedBy。
 
-方案预览明确选择 profileId 或带 revision 的 entries 草稿；不混用，不隐式默认，不落库。旧三个接口继续兼容默认方案，旧 PUT 合并定义、只替换默认方案成员，未出现的定义不删除。GET 不持久化旧数据格式投影；详情见[规则与方案](../../docs/filename-rules.md)。
+方案预览明确选择 profileId 或带 revision 的 entries 草稿；不混用，不隐式默认，不落库。旧三个接口继续兼容默认方案，旧 PUT 合并定义、只替换默认方案成员，未出现的定义不删除。GET 不持久化旧数据格式投影；详情见[规则与方案](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/filename-rules.md)。
 
 ## 歌曲管理
 
@@ -49,22 +49,22 @@
 
 ## 歌曲元数据刮削
 
-新增 `/api/v1/metadata` 下的设置、单曲搜索/应用、批次创建/查询/暂停/续跑/终止、明细重试/审核，以及候选/已确认封面代理。批次创建可在 `all=true` 时提供 `sourceId`，仅处理该媒体来源。新安装默认启用网易云、QQ、酷狗、酷我和汽水五个平台，自动写入默认关闭；升级保留已保存的配置。管理端入口为“设置 → 音乐平台”，单曲搜索只产生候选；所有操作需要管理员会话，非 GET 操作需要 CSRF。`MediaSong.metadata` 是当前正式资料的兼容投影；人工字段不会因文件指纹变化整体失效，`result` 中的原始标签不覆盖正式字段。批次完成与审核完成分开，最新批次不存在返回 204。字段、枚举、分页及路径以 JSON 契约为准，详细限制见[元数据刮削](../../docs/metadata-scraping.md)。
+新增 `/api/v1/metadata` 下的设置、单曲搜索/应用、批次创建/查询/暂停/续跑/终止、明细重试/审核，以及候选/已确认封面代理。批次创建可在 `all=true` 时提供 `sourceId`，仅处理该媒体来源。新安装默认启用网易云、QQ、酷狗、酷我和汽水五个平台，自动写入默认关闭；升级保留已保存的配置。管理端入口为“设置 → 音乐平台”，单曲搜索只产生候选；所有操作需要管理员会话，非 GET 操作需要 CSRF。`MediaSong.metadata` 是当前正式资料的兼容投影；人工字段不会因文件指纹变化整体失效，`result` 中的原始标签不覆盖正式字段。批次完成与审核完成分开，最新批次不存在返回 204。字段、枚举、分页及路径以 JSON 契约为准，详细限制见[元数据刮削](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/metadata-scraping.md)。
 
-歌曲位置页面改用卡片；来源列表 API 保留名称/地址、类型、方案筛选和分页，歌曲列表继续使用搜索与分页表格。查询使用 ID 分页后延迟关联和筛选排序联合索引。深分页成本与包含搜索边界见[列表查询说明](../../docs/library-search.md)。
+歌曲位置页面改用卡片；来源列表 API 保留名称/地址、类型、方案筛选和分页，歌曲列表继续使用搜索与分页表格。查询使用 ID 分页后延迟关联和筛选排序联合索引。深分页成本与包含搜索边界见[列表查询说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/library-search.md)。
 
-媒体来源添加/编辑支持定时扫描开关及标准五段 cron（上海时区）；配置与下次触发持久化，同来源扫描中跳过，停机遗漏不逐次补跑。使用及 API 字段、调度限制见[定时扫描](../../docs/media-scan-schedule.md)。
+媒体来源添加/编辑支持定时扫描开关及标准五段 cron（上海时区）；配置与下次触发持久化，同来源扫描中跳过，停机遗漏不逐次补跑。使用及 API 字段、调度限制见[定时扫描](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/media-scan-schedule.md)。
 
-单曲元数据已使用独立双栏审核工作台，支持字段编辑、受管 JPEG/PNG 上传、平台封面搜索及统一确认应用；批次候选审核复用同一工作台，确认后同步更新批次明细。新增接口、资源备份、幂等与版本校验规则见[单曲审核](../../docs/single-song-review.md)。
+单曲元数据已使用独立双栏审核工作台，支持字段编辑、受管 JPEG/PNG 上传、平台封面搜索及统一确认应用；批次候选审核复用同一工作台，确认后同步更新批次明细。新增接口、资源备份、幂等与版本校验规则见[单曲审核](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/single-song-review.md)。
 
-批量工作台已统一整体进度：total/completed 均包含跳过项，新批次持久化跳过明细，旧批次仅汇总并提示。新增批次内搜索/排序、可信度审核提示及按状态操作，自动写入和限流规则不变。接口兼容说明及统计定义见[批量工作台](../../docs/batch-metadata-workbench.md)。
+批量工作台已统一整体进度：total/completed 均包含跳过项，新批次持久化跳过明细，旧批次仅汇总并提示。新增批次内搜索/排序、可信度审核提示及按状态操作，自动写入和限流规则不变。接口兼容说明及统计定义见[批量工作台](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/batch-metadata-workbench.md)。
 
-歌曲分类契约新增 `/api/v1/classification` 及 `Classification*` schemas；媒体歌曲响应包含分类状态，查询支持 `tagIds`（维度内 OR、维度间 AND）及 `unclassified`。所有接口继续要求管理员会话，写入使用 CSRF；没有新增访客公开分类接口。操作语义见[分类说明](../../docs/song-classification.md)。
+歌曲分类契约新增 `/api/v1/classification` 及 `Classification*` schemas；媒体歌曲响应包含分类状态，查询支持 `tagIds`（维度内 OR、维度间 AND）及 `unclassified`。所有接口继续要求管理员会话，写入使用 CSRF；没有新增访客公开分类接口。操作语义见[分类说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/song-classification.md)。
 
 
 ## 歌曲位置与本地目录选择
 
-歌曲下载新增 `/api/v1/lx-downloads` 和 `Lx*` schemas，媒体来源增加 `useForLxDownloads`。全部要求管理员会话，POST/DELETE 要求 CSRF；请求只接收服务端缓存的歌曲标识，不接受音频 URL 或解析载荷。目录搜索页码从 1 开始，记录页码从 0 开始；预览显示上游总数、读取限制及警告。音源正文与导入地址仅写入并加密，响应不回显。下载执行独立于只读任务中心，取消/重试通过下载业务接口。完整语义见[歌曲下载](../../docs/lx-downloads.md)。
+歌曲下载新增 `/api/v1/lx-downloads` 和 `Lx*` schemas，媒体来源增加 `useForLxDownloads`。全部要求管理员会话，POST/DELETE 要求 CSRF；请求只接收服务端缓存的歌曲标识，不接受音频 URL 或解析载荷。目录搜索页码从 1 开始，记录页码从 0 开始；预览显示上游总数、读取限制及警告。音源正文与导入地址仅写入并加密，响应不回显。下载执行独立于只读任务中心，取消/重试通过下载业务接口。完整语义见[歌曲下载](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/lx-downloads.md)。
 
 管理端“歌曲位置”以卡片呈现来源，统一添加入口；定时扫描、解析方案收进“更多设置”。本地文件夹通过 `GET /api/v1/media-sources/local-directories?path=...&page=0` 浏览选择，WebDAV 仍填写地址。名称在前端留空时按文件夹名生成，API 的 name 仍为必填。
 
@@ -91,7 +91,7 @@ WebDAV 使用保存的地址和加密凭据在服务端发起 GET/HEAD，转发 
 
 ## AI 配置
 
-管理员专用 `/api/v1/ai` 提供厂商目录、多模型/搜索服务 CRUD、显式连接与结构化测试、默认搜索和功能绑定。密钥只写不读，服务与绑定使用 revision 并发保护，引用中的服务不能删除或停用。原分类配置接口保留兼容适配；边界与通用搜索响应见 [AI 设置](../../docs/ai-settings.md)，字段以 `singverse.openapi.json` 为准。
+管理员专用 `/api/v1/ai` 提供厂商目录、多模型/搜索服务 CRUD、显式连接与结构化测试、默认搜索和功能绑定。密钥只写不读，服务与绑定使用 revision 并发保护，引用中的服务不能删除或停用。原分类配置接口保留兼容适配；边界与通用搜索响应见 [AI 设置](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/ai-settings.md)，字段以 `singverse.openapi.json` 为准。
 
 本地和 WebDAV 标签沿用歌曲 API 元数据结构，字段来源 kind=FILE 表示音视频内嵌标签证据，不能覆盖本机确认字段；读取通过以下短期授权回源协议执行。
 
@@ -134,7 +134,7 @@ TV 非转码增强新增设备专用 text-tracks 与 releases/current、releases
 
 ## 转码与播放协商
 
-新增 `/api/v1/transcoding` 管理端接口、`/api/v1/tv/transcoding` 设备会话资源和 `/api/v1/internal/transcode-input/{id}` 计算节点专用 Range 读取。客户端能力为运行时报告，实时返回 DIRECT/VERSION/HLS 与原媒体秒偏移；HLS 准备中需轮询会话并续租。所有播放资源仍经过 Go 授权，内部执行接口只对 Go 开放。离线任务持久化在业务库，成功文件由 Go 校验长度/SHA-256 后原子保存。详细行为、错误和部署配置见[转码说明](../../docs/transcoding.md)。
+新增 `/api/v1/transcoding` 管理端接口、`/api/v1/tv/transcoding` 设备会话资源和 `/api/v1/internal/transcode-input/{id}` 计算节点专用 Range 读取。客户端能力为运行时报告，实时返回 DIRECT/VERSION/HLS 与原媒体秒偏移；HLS 准备中需轮询会话并续租。所有播放资源仍经过 Go 授权，内部执行接口只对 Go 开放。离线任务持久化在业务库，成功文件由 Go 校验长度/SHA-256 后原子保存。详细行为、错误和部署配置见[转码说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/transcoding.md)。
 
 硬件加速配置：GET/POST `/api/v1/transcoding/hardware-settings`，POST `/hardware-settings/test`。保存携带 revision；冲突返回 409，指定硬件短样本失败返回 422。`backend=deployment` 恢复节点部署环境变量，草稿测试不切换当前后端。内部接口路径对应 `/internal/v1/transcoding/hardware-settings`，继续使用 Bearer 和请求体边界。
 
@@ -158,7 +158,7 @@ compute 内部 `/internal/v1/audio-roles/tasks` 接收固定 UUID、mode=PROBE|A
 
 ## 电视首页个性化
 
-Go 服务内嵌8张音乐主题默认封面，无需外部图片服务。首次启动仅在首页 revision=0 且无封面时原子初始化并启用，既有设置与图片不覆盖；改名、排序、停用、移除沿用现有接口，删除后重启不补回。默认图片来源及提示词见 [封面资源说明](../../internal/party/assets/home/README.md)。
+Go 服务内嵌8张音乐主题默认封面，无需外部图片服务。首次启动仅在首页 revision=0 且无封面时原子初始化并启用，既有设置与图片不覆盖；改名、排序、停用、移除沿用现有接口，删除后重启不补回。默认图片来源及提示词见 [封面资源说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/internal/party/assets/home/README.md)。
 
 新增`/api/v1/admin/tv-settings`及封面上传/删除/图片接口：管理员Cookie读取，写入再验证CSRF与全局revision；上限8张JPEG/PNG，单张2,000,000字节、4096像素，归一为最长边1280px的JPEG。上传即保存并启用；PUT完整保存文案、轮播设置与全部已有图片的启停/顺序，不能通过PUT增删图片。冲突409，不静默覆盖。
 
@@ -224,7 +224,7 @@ Nginx 为上述两个批量写入接口单独允许 128 KiB 请求，以容纳 1
 
 ## 媒体资料导入与来源入库
 
-来源创建可选 `startScan` 和 WebDAV 的 `autoExtractEmbedded`；省略时保持旧客户端只保存的行为。后台导入使用 `embedded-metadata/import-jobs` 上传、预览、映射、确认、查询、取消与重试，返回 lower camelCase 的 `MediaImportJob`；上传完成后由服务端续跑。`rebind` 保留歌曲身份与本地订正，单独重新核验媒体。默认共享 v4 使用稳定系列、版本与正式对象，兼容 v2/v3 导入；默认完整 ZIP，增量要求匹配基线，旧版本拒绝，删除提示不自动应用。详细状态、路径规则、限额及兼容边界见[媒体库说明](../../docs/media-library.md#媒体入库资料合并与分享2026-11-10)。
+来源创建可选 `startScan` 和 WebDAV 的 `autoExtractEmbedded`；省略时保持旧客户端只保存的行为。后台导入使用 `embedded-metadata/import-jobs` 上传、预览、映射、确认、查询、取消与重试，返回 lower camelCase 的 `MediaImportJob`；上传完成后由服务端续跑。`rebind` 保留歌曲身份与本地订正，单独重新核验媒体。默认共享 v4 使用稳定系列、版本与正式对象，兼容 v2/v3 导入；默认完整 ZIP，增量要求匹配基线，旧版本拒绝，删除提示不自动应用。详细状态、路径规则、限额及兼容边界见[媒体库说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/media-library.md#媒体入库资料合并与分享2026-11-10)。
 
 
 ## Metadata Schema 1.0 与正式资料接口（2026-11-11）

@@ -64,7 +64,7 @@ SQLite 与 MySQL 在原有 `202611080001_background_tasks.sql` 之后新增 `202
 
 ## 验证入口
 
-从根目录执行 `make frontend-check`、`make web-check`、`make go-backend-test`、`make db-fresh-check`、`make db-sqlite-check`；前端行为测试另执行 `npm test --prefix services/singverse-frontend`。`make db-mysql-check` 创建独占的随机本机 MySQL 容器和数据，验证后仅清理该实例。当前 Go 实际结果及未验收范围见 [Go 验证](../docs/go-migration-verification.md)，调度流程映射见 [迁移表](go-scheduled-migration.md)。下文保留原 Java 历史记录，不作为 Go 验证结果。
+从根目录执行 `make frontend-check`、`make web-check`、`make go-backend-test`、`make db-fresh-check`、`make db-sqlite-check`；前端行为测试另执行 `npm test --prefix services/singverse-frontend`。`make db-mysql-check` 创建独占的随机本机 MySQL 容器和数据，验证后仅清理该实例。当前 Go 实际结果及未验收范围见 [Go 验证](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/go-migration-verification.md)，调度流程映射见 [迁移表](go-scheduled-migration.md)。下文保留原 Java 历史记录，不作为 Go 验证结果。
 
 ## 原 Java 实现：2026-11-09 批次视图实际验证
 

@@ -101,7 +101,7 @@ double priority = clamp(score + (1 - score) * bonus);
 
 ## 数据迁移和验证入口
 
-SQLite/MySQL 各使用 `202611070001_initial_schema.sql` 从空库一次创建完整结构，包括水位、profile 固定/热度、幂等实例/租约、有效计次时间、删除日志及分页/历史/待删索引。默认策略直接为 HYBRID，设置 revision=0；空库播放统计直接就绪。此前增量迁移已合并删除，不提供旧数据库升级路径。验证入口及数据隔离见[数据库说明](../database/README.md)。
+SQLite/MySQL 各使用 `202611070001_initial_schema.sql` 从空库一次创建完整结构，包括水位、profile 固定/热度、幂等实例/租约、有效计次时间、删除日志及分页/历史/待删索引。默认策略直接为 HYBRID，设置 revision=0；空库播放统计直接就绪。此前增量迁移已合并删除，不提供旧数据库升级路径。验证入口及数据隔离见[数据库说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/database/README.md)。
 
 针对性用例覆盖评分半衰/边界、近期保护、固定/下载/暂停/预取保护、容量水位、重复触发、取消、并发保护重检、四阶段恢复、删除失败/数据库回滚、原片滚动预留/容量恢复和真实 HTTP 授权。`CacheScaleTest` 用 1 万/10 万轻量记录测量真实 XML 查询、生产排序、20 条分页与热文件检查；只创建一份微小 HLS 夹具，不冒充真实 NAS 吞吐基准。
 
