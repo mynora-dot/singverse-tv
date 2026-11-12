@@ -42,3 +42,6 @@ captures/
 # Python release tooling cache
 __pycache__/
 *.py[cod]
+
+# Personal agent skills are maintained outside this repository.
+/skills/
