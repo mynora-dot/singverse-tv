@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from the checked-in SingVerse SVG masters. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="1254" android:viewportHeight="1254">
+<path android:pathData="M329 575 C220 641 116 730 105 776 L213 747 C241 699 278 660 341 620 Z">
+  <aapt:attr name="android:fillColor">
+    <gradient android:type="linear" android:startX="125" android:startY="790" android:endX="1130" android:endY="470">
+      <item android:offset="0" android:color="#0051FF"/>
+      <item android:offset="0.5" android:color="#2799F7"/>
+      <item android:offset="0.78" android:color="#54D2F3"/>
+      <item android:offset="1" android:color="#2395FA"/>
+    </gradient>
+  </aapt:attr>
+</path>
+<path android:pathData="M938 362 C928 260 835 187 713 187 C558 181 420 262 345 361 C278 448 280 534 333 607 C376 666 449 690 528 722 C627 763 729 806 770 851 C799 884 787 911 757 921 C665 935 566 908 474 870 C410 843 355 839 307 863 C265 883 251 921 259 966 C279 1073 406 1132 554 1133 C733 1135 903 1061 973 953 C1021 879 1011 794 967 730 C921 664 833 613 733 575 C637 539 556 517 520 482 C488 451 501 418 527 408 C566 388 615 405 660 429 C707 457 753 472 793 467 C870 465 938 417 938 362 Z">
+  <aapt:attr name="android:fillColor">
+    <gradient android:type="linear" android:startX="350" android:startY="410" android:endX="899" android:endY="908">
+      <item android:offset="0" android:color="#137CFF"/>
+      <item android:offset="0.5" android:color="#0648CC"/>
+      <item android:offset="1" android:color="#002D9D"/>
+    </gradient>
+  </aapt:attr>
+</path>
+<path android:pathData="M938 362 C928 260 835 187 713 187 C558 181 420 262 345 361 C362 436 412 478 559 519 C507 490 490 460 507 429 C528 390 623 347 746 323 C840 302 918 326 938 362 Z">
+  <aapt:attr name="android:fillColor">
+    <gradient android:type="linear" android:startX="372" android:startY="340" android:endX="919" android:endY="251">
+      <item android:offset="0" android:color="#1278F8"/>
+      <item android:offset="1" android:color="#38B2F4"/>
+    </gradient>
+  </aapt:attr>
+</path>
+<path android:pathData="M269 1000 C301 1085 419 1133 554 1133 C733 1135 903 1061 973 953 C1021 879 1011 794 967 730 C964 806 915 865 837 910 C721 972 473 976 269 1000 Z">
+  <aapt:attr name="android:fillColor">
+    <gradient android:type="linear" android:startX="318" android:startY="1040" android:endX="969" android:endY="855">
+      <item android:offset="0" android:color="#0873FF"/>
+      <item android:offset="1" android:color="#3FBEFA"/>
+    </gradient>
+  </aapt:attr>
+</path>
+<path android:pathData="M105 776 C90 831 142 846 242 833 C559 816 1049 606 1147 488 C1183 443 1189 399 1101 357 C1157 401 1137 444 1098 479 C949 613 600 736 345 757 C254 767 206 757 213 734 C182 741 140 758 105 776 Z">
+  <aapt:attr name="android:fillColor">
+    <gradient android:type="linear" android:startX="125" android:startY="790" android:endX="1130" android:endY="470">
+      <item android:offset="0" android:color="#0051FF"/>
+      <item android:offset="0.5" android:color="#2799F7"/>
+      <item android:offset="0.78" android:color="#54D2F3"/>
+      <item android:offset="1" android:color="#2395FA"/>
+    </gradient>
+  </aapt:attr>
+</path>
+<path android:pathData="M1067 178 C1080 244 1102 274 1176 295 C1103 314 1081 340 1065 403 C1050 341 1024 316 959 295 C1024 279 1051 251 1067 178 Z">
+  <aapt:attr name="android:fillColor">
+    <gradient android:type="linear" android:startX="1067" android:startY="178" android:endX="1067" android:endY="403">
+      <item android:offset="0" android:color="#43C7FF"/>
+      <item android:offset="0.55" android:color="#0A72F5"/>
+      <item android:offset="1" android:color="#0644D0"/>
+    </gradient>
+  </aapt:attr>
+</path>
+</vector>

@@ -16,7 +16,7 @@ class ReleaseValidationTest(unittest.TestCase):
         return dict({"tag_name": tag, "draft": False, "prerelease": False, "assets": []}, **values)
 
     def metadata(self, version="0.1.0", certificate="a" * 64):
-        return dict(schemaVersion=1, platform="tv", packageName="com.mynora.singverse.tv", minSdk=23,
+        return dict(schemaVersion=1, platform="tv", packageName="com.mynora.singverse.tv", minSdk=21,
                     versionName=version, versionCode=validation.version_code(version), certificateSha256=certificate,
                     sha256="c" * 64, size=123, abis=["universal"], notes="发行说明")
 
@@ -90,7 +90,7 @@ class ReleaseValidationTest(unittest.TestCase):
         with self.assertRaises(ValueError): validation.check_metadata(wrong, "0.1.0")
 
     def test_corrupt_previous_metadata_is_rejected(self):
-        for key, value in (("sha256", ""), ("size", True), ("size", 0), ("abis", []), ("abis", ["unknown"]),
+        for key, value in (("minSdk", 20), ("minSdk", True), ("sha256", ""), ("size", True), ("size", 0), ("abis", []), ("abis", ["unknown"]),
                            ("abis", ["universal", "arm64-v8a"]), ("notes", "长" * 6000)):
             data = self.metadata()
             data[key] = value

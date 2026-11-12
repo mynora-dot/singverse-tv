@@ -81,4 +81,24 @@ class PlaybackRecoveryTest {
         val level11 = PlaybackCapabilities.avcCandidate(mapOf("Baseline" to 11, "Main" to 9), 192_000) { _, _, _ -> true }!!
         assertEquals(mapOf("Baseline" to 11), level11.profiles)
     }
+
+    @Test fun oldTelevisionProfilePrefersBaselineAndCapsLevelWithoutInventingSupport() {
+        assertEquals(mapOf("Baseline" to 31), PlaybackCapabilities.compatibilityProfiles(mapOf("Baseline" to 41, "High" to 41)))
+        assertEquals(mapOf("Main" to 30), PlaybackCapabilities.compatibilityProfiles(mapOf("Main" to 30, "High" to 41)))
+        assertEquals(mapOf("High" to 31), PlaybackCapabilities.compatibilityProfiles(mapOf("High" to 41)))
+        assertEquals(mapOf("Baseline" to 9), PlaybackCapabilities.compatibilityProfiles(mapOf("Baseline" to 9)))
+        assertTrue(PlaybackCapabilities.compatibilityProfiles(emptyMap()).isEmpty())
+    }
+
+    @Test fun oldTelevisionResolutionNeverExceedsEitherThePresetOrActualDecoder() {
+        val profiles = PlaybackCapabilities.compatibilityProfiles(mapOf("Baseline" to 41))
+        val preset = PlaybackCapabilities.avcCandidate(profiles, 4_000_000, maxWidth = 1280, maxHeight = 720) { _, _, _ -> true }!!
+        assertEquals(1280, preset.width)
+        assertEquals(720, preset.height)
+        assertEquals(30, preset.fps)
+        val weak = PlaybackCapabilities.avcCandidate(profiles, 2_000_000, maxWidth = 1280, maxHeight = 720) { width, _, _ -> width <= 848 }!!
+        assertEquals(848, weak.width)
+        assertEquals(480, weak.height)
+        assertEquals(2_000_000, weak.bitrate)
+    }
 }

@@ -1,19 +1,13 @@
 package com.mynora.singverse.tv
 
 import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 class TvHttpException(val status: Int, message: String) : java.io.IOException(message)
 
@@ -22,36 +16,31 @@ class TvClient(context: Context) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.allocationByteCount
     }
     private val preferences = context.getSharedPreferences("nas", Context.MODE_PRIVATE)
+    private val credentialCipher = TvCredentialCipher(context, preferences)
     @Volatile var base: String = preferences.getString("base", "") ?: ""
     @Volatile var token: String = ""
     @Volatile internal var connectionGeneration = 0L; private set
     init {
         token = runCatching {
             val value = preferences.getString("token", null) ?: return@runCatching ""
-            val bytes = Base64.decode(value, Base64.NO_WRAP)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-            String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+            credentialCipher.decrypt(value)
         }.getOrDefault("")
     }
-    private fun key(): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        return store.getKey("singverse-device", null) as? SecretKey ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-            init(KeyGenParameterSpec.Builder("singverse-device", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
-        }.generateKey()
-    }
     @Synchronized fun credentials(): Pair<String, String> = base to token
-    @Synchronized fun save(address: String, credential: String) {
+    suspend fun save(address: String, credential: String) {
         val uri = URI(address.trim().trimEnd('/'))
         require(uri.scheme in listOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null && uri.path.orEmpty().isEmpty()) { "请输入 NAS 根地址，例如 http://nas:18080" }
-        if (base != uri.toString()) covers.evictAll()
-        connectionGeneration++
-        base = uri.toString(); token = credential
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key())
-        val encrypted = cipher.iv + cipher.doFinal(token.toByteArray(Charsets.UTF_8))
-        preferences.edit().putString("base", base).putString("token", Base64.encodeToString(encrypted, Base64.NO_WRAP)).apply()
+        val generation = connectionGeneration
+        // RSA key generation on older TVs must not block the UI or commit a cancelled login.
+        val encrypted = withContext(Dispatchers.IO) { credentialCipher.encrypt(credential) }
+        currentCoroutineContext().ensureActive()
+        synchronized(this) {
+            check(generation == connectionGeneration) { "NAS 连接已更换，请重新授权" }
+            if (base != uri.toString()) covers.evictAll()
+            connectionGeneration++
+            base = uri.toString(); token = credential
+            preferences.edit().putString("base", base).putString("token", encrypted).apply()
+        }
     }
     @Synchronized fun clear() { connectionGeneration++; covers.evictAll(); token = ""; preferences.edit().remove("token").apply() }
     suspend fun image(path: String, revision: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {

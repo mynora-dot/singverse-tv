@@ -2,11 +2,6 @@
 package com.mynora.singverse.tv
 
 import android.content.Context
-import android.media.AudioManager
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.runtime.*
 import androidx.media3.common.*
 import androidx.media3.exoplayer.ExoPlayer
@@ -18,7 +13,6 @@ data class OutputRoute(val id: Int, val name: String)
 internal const val GENERATED_BACKING_SOURCE = "derived:backing"
 class PlaybackOptions(private val context: Context, private val player: ExoPlayer, private val audio: KaraokeAudioProcessor) {
     private val prefs = context.getSharedPreferences("playback-options", Context.MODE_PRIVATE)
-    private val manager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     var tracks by mutableStateOf(listOf<PlayerTrack>()); private set
     var routes by mutableStateOf(listOf<OutputRoute>()); private set
     var route by mutableStateOf("系统默认"); private set
@@ -41,11 +35,12 @@ class PlaybackOptions(private val context: Context, private val player: ExoPlaye
     private var songKey = ""
     private var songId = ""
     var audioDelay by mutableIntStateOf(prefs.getInt("audio-delay",0).coerceIn(0,500)); private set
-    private val callback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(devices: Array<out AudioDeviceInfo>) { refreshRoutes() }
-        override fun onAudioDevicesRemoved(devices: Array<out AudioDeviceInfo>) { route = "系统默认"; player.setPreferredAudioDevice(null); refreshRoutes() }
+    private val outputRoutes = AudioOutputRoutes.create(context, player) { removed ->
+        if (removed) route = "系统默认"
+        refreshRoutes()
     }
-    init { manager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper())); player.volume=volume/100f; audio.delayMs=audioDelay; refreshRoutes() }
+    val canSelectOutput: Boolean get() = outputRoutes.selectable
+    init { player.volume=volume/100f; audio.delayMs=audioDelay; refreshRoutes() }
     private var sourceAudio = listOf<String>()
     private var sourceAudioLabels = listOf<String>()
     private var sourceRepresentation = true
@@ -108,12 +103,8 @@ class PlaybackOptions(private val context: Context, private val player: ExoPlaye
     fun changeVolume(value: Int) {volume=value.coerceIn(0,100);player.volume=volume/100f;prefs.edit().putInt("volume",volume).apply()}
     fun offset(value: Int) {lyricOffset=value.coerceIn(-5000,5000);prefs.edit().putInt("lyric-offset",lyricOffset).apply()}
     fun delayAudio(value: Int) { audioDelay=value.coerceIn(0,500);audio.delayMs=audioDelay;prefs.edit().putInt("audio-delay",audioDelay).apply() }
-    fun refreshRoutes(){routes=manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map {
-        val kind=when(it.type){AudioDeviceInfo.TYPE_HDMI,AudioDeviceInfo.TYPE_HDMI_ARC->"HDMI";AudioDeviceInfo.TYPE_BUILTIN_SPEAKER->"扬声器";AudioDeviceInfo.TYPE_BLUETOOTH_A2DP->"蓝牙";AudioDeviceInfo.TYPE_USB_DEVICE->"USB";AudioDeviceInfo.TYPE_WIRED_HEADPHONES,AudioDeviceInfo.TYPE_WIRED_HEADSET->"有线耳机";else->"输出 ${it.id}"}
-        val count=it.channelCounts.maxOrNull()?.takeIf { count->count>0 }?.let { count->"$count 声道" } ?: "声道能力未报告"
-        OutputRoute(it.id,"$kind · ${it.productName} · $count")
-    }}
-    fun chooseRoute(id: Int?) {val device=manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.id==id };player.setPreferredAudioDevice(device);route=device?.productName?.toString() ?: "系统默认"}
+    fun refreshRoutes() { routes = outputRoutes.outputs() }
+    fun chooseRoute(id: Int?) { route = outputRoutes.choose(id) }
     fun beginSong(id: String, revision: String) {
         sourceAudio=emptyList();sourceAudioLabels=emptyList();songId=id;songKey="$id:$revision";sidecars=emptyList();plainLyrics=emptyList();activeLine=null;nextLine=null;textChoiceExplicit=false;textLoading=true;textLoadFailed=false;textWarnings=emptyList();textStatus="读取歌词与字幕…";textSelection="内嵌字幕";channel="STEREO";audio.channelMode="STEREO";setPitch(0)
         roleOriginal=prefs.getString("original:$songKey","") ?: "";roleBacking=prefs.getString("backing:$songKey","") ?: ""
@@ -199,5 +190,5 @@ class PlaybackOptions(private val context: Context, private val player: ExoPlaye
         if(track.sourceId.isNotBlank() && role!="generated" && !role.contains('|'))markRole(original)
         return true
     }
-    fun close(){manager.unregisterAudioDeviceCallback(callback)}
+    fun close() { outputRoutes.close() }
 }

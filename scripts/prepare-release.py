@@ -51,7 +51,7 @@ def main():
     expected = "com.mynora.singverse." + args.platform
     if not package or package.group(1) != expected or int(package.group(2)) != code or package.group(3) != version:
         raise SystemExit("APK package/version differs from VERSION")
-    minimum = 24 if args.platform == "mobile" else 23
+    minimum = 24 if args.platform == "mobile" else 21
     if not sdk or int(sdk.group(1)) != minimum:
         raise SystemExit("APK minSdk differs from platform contract")
     if len(certificates) != 1 or not re.fullmatch(r"[a-fA-F0-9]{64}", certificates[0]):

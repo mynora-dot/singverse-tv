@@ -6,7 +6,8 @@
       "sha256": "a7e4c0e825a6e84e8b5c6668b0f9828e86e6316ca7eb50767b8728316f4307f2"
     },
     "contracts/client-updates.md": {
-      "sha256": "f35857e399ff06036bdb7db6e40f792b6f2fbdd5bece55ef9d384d4c0af60c97"
+      "sha256": "ed360d78f2e81d479adc9388790e91a07947390d2bceda09c51004567a300bfe",
+      "revision": "dc3efba8deeac4d11322823545bef2c95a49bb33"
     },
     "contracts/frontend-hosting.md": {
       "sha256": "af1d30e1ebbabd766df669302609c6129245befb7ec875452c384acc2d2474ba"
@@ -83,5 +84,6 @@
     "contracts/song-cache.md": {
       "sha256": "6525f9349ad80cac8a14d55d8261a8b227c83f1c94724484c9acfebf34565db1"
     }
-  }
+  },
+  "workingTree": true
 }

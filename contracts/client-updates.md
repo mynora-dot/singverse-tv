@@ -1,6 +1,6 @@
 # Android 客户端发行与更新契约
 
-手机仓库包名 com.mynora.singverse.mobile、minSdk 24；TV 包名 com.mynora.singverse.tv、minSdk 23。每仓根 VERSION 独立维护，正式标签 v{VERSION}。versionCode = major × 1000000 + minor × 1000 + patch，minor/patch 不超过999，结果为1–2100000000，且高于上一正式包。正式签名证书持续一致，不使用 debug 签名发布。
+手机仓库包名 com.mynora.singverse.mobile、minSdk 24；TV 包名 com.mynora.singverse.tv、minSdk 21（Android 5.0，包含 Android 5.1 / API 22）。每仓根 VERSION 独立维护，正式标签 v{VERSION}。versionCode = major × 1000000 + minor × 1000 + patch，minor/patch 不超过999，结果为1–2100000000，且高于上一正式包。正式签名证书持续一致，不使用 debug 签名发布。TV APK 保留 Android 5 所需的 v1 签名及 armeabi-v7a 支持；若无原生库可标记 universal。
 
 ## 发行资产
 

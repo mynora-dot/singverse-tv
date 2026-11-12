@@ -232,6 +232,9 @@ class TvApp(context: android.content.Context) {
         }
     }
     var playbackQuality by mutableStateOf("auto")
+    private val playbackPreferences = context.getSharedPreferences("playback-options", android.content.Context.MODE_PRIVATE)
+    var compatiblePlayback by mutableStateOf(playbackPreferences.getBoolean("compatible-playback", android.os.Build.VERSION.SDK_INT < 23))
+        private set
     private val recovery = PlaybackRecovery()
     private var resourceJob: Job? = null
     private var pendingLoadCommand = ""
@@ -429,7 +432,7 @@ class TvApp(context: android.content.Context) {
         val turn = ++resourceGeneration
         val connection = client.credentials()
         releaseExecution()
-        val body = JSONObject().put("songId",song).put("client",PlaybackCapabilities.report()).put("quality",playbackQuality)
+        val body = JSONObject().put("songId",song).put("client",PlaybackCapabilities.report(compatiblePlayback || force)).put("quality",playbackQuality)
             .put("start",startMs/1000.0).put("force",force).put("audioRole",requestedAudioRole)
         var resource = json("/api/v1/tv/playback-resources", "POST", body)
         val initialAudio=resource.optJSONObject("audioRoles")
@@ -540,8 +543,19 @@ class TvApp(context: android.content.Context) {
         return role.isNotBlank() && (online || playbackOptions.canUseRole(original))
     }
     fun changeQuality(quality: String) {
+        require(quality in listOf("auto", "1080p", "720p", "480p"))
         if (playbackQuality == quality) return
         playbackQuality = quality
+        reloadCurrentPlayback()
+    }
+    fun changeCompatibility(enabled: Boolean) {
+        if (compatiblePlayback == enabled) return
+        compatiblePlayback = enabled
+        playbackPreferences.edit().putBoolean("compatible-playback", enabled).apply()
+        if (enabled && playbackQuality == "1080p") playbackQuality = "auto"
+        reloadCurrentPlayback()
+    }
+    private fun reloadCurrentPlayback() {
         if (hasConfirmedPlayback) { run { rebuildPlayback() }; return }
         val playback = snapshot.optJSONObject("playback") ?: return
         val command = lastLoadCommand?.takeIf { lastLoadSessionId == snapshot.optString("id") && it.optJSONObject("playback")?.optString("attemptId") == playback.optString("attemptId") } ?: return

@@ -116,7 +116,8 @@ private fun LazyListScope.textTrackSettings(app: TvApp) {
 
 private fun LazyListScope.outputSettings(app: TvApp) {
     val options = app.playbackOptions
-    section("output", "声音输出", "优先输出：${options.route}。实际输出由电视系统协商。")
+    section("output", "声音输出", if (options.canSelectOutput) "优先输出：${options.route}。实际输出由电视系统协商。"
+        else "使用电视系统默认输出；切换 HDMI、蓝牙或其他设备请在电视系统设置中操作。")
     item("output:default") {
         Action("系统默认输出", Modifier.fillMaxWidth(), selected = options.route == "系统默认",
             focusKey = "playback:output:default") { options.chooseRoute(null) }
@@ -145,8 +146,17 @@ private fun LazyListScope.outputSettings(app: TvApp) {
 private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean) {
     val options = app.playbackOptions
     if (!audioOnly) {
-        section("quality", "视频画质", "切换后沿用当前歌曲与播放进度。")
-        items(listOf("auto", "1080p", "720p", "480p"), key = { "quality:$it" }) { quality ->
+        section("compatibility", "播放兼容性", "老电视兼容模式最高 720p，优先使用 H.264 和双声道音频；需要时由 NAS 转换。")
+        item("compatibility:auto") {
+            Action("自动检测", Modifier.fillMaxWidth(), selected = !app.compatiblePlayback,
+                focusKey = "playback:compatibility:auto") { app.changeCompatibility(false) }
+        }
+        item("compatibility:legacy") {
+            Action("老电视兼容", Modifier.fillMaxWidth(), selected = app.compatiblePlayback,
+                focusKey = "playback:compatibility:legacy") { app.changeCompatibility(true) }
+        }
+        section("quality", "视频画质", if (app.compatiblePlayback) "兼容模式最高 720p；切换后沿用当前歌曲与播放进度。" else "切换后沿用当前歌曲与播放进度。")
+        items(if (app.compatiblePlayback) listOf("auto", "720p", "480p") else listOf("auto", "1080p", "720p", "480p"), key = { "quality:$it" }) { quality ->
             Action(if (quality == "auto") "自动画质" else quality, Modifier.fillMaxWidth(), selected = app.playbackQuality == quality,
                 focusKey = "playback:quality:$quality") { app.changeQuality(quality) }
         }

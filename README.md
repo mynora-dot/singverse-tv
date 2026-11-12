@@ -4,9 +4,9 @@
 
 包名 `com.mynora.singverse.tv`。Kotlin / Jetpack Compose TV，授权后的业务页面采用近黑背景、中性炭灰选中标记与白色遥控焦点，顶部导航为「首页 / 点歌 / 已点 / 设置」。已接入 NAS 地址检测、管理员批准的设备授权、正式分类/歌手署名浏览、歌曲查询、本地/WebDAV 原始媒体直放、聚会队列、扫码邀请和本机主持操作。
 
-安装图标、桌面横幅与应用内品牌标识统一使用[项目 Logo](https://github.com/mynora-dot/singverse-frontend/blob/main/assets/branding/README.md)。Manifest 的 `@mipmap/ic_launcher` 包含五档传统图标和 Android 8+ 自适应前景；`@drawable/tv_banner` 使用 `drawable-xhdpi/tv_banner.png` 中的 320 × 180 横版 Logo。debug/release 构建均自动包含这些工程内资源。
+安装图标、桌面横幅与应用内品牌标识统一使用[项目 Logo](https://github.com/mynora-dot/singverse-frontend/blob/main/assets/branding/README.md)。Manifest 的 `@mipmap/ic_launcher` 包含五档传统图标和 Android 8+ 自适应前景。Android 7.0+ 的应用内标识、自适应前景与 `@drawable/tv_banner` 使用 `drawable-anydpi-v24/` 下的渐变矢量资源，按实际显示尺寸绘制；横幅字标已转为轮廓，不依赖系统字体。Android 5.0–6.0 使用从同一矢量源直接导出的 1024 × 1024 透明标志与标准 xhdpi 320 × 180 横幅。debug/release 构建均自动包含这些工程内资源。
 
-版本沿用 AGP 8.9.2、Gradle 8.11.1、Kotlin 2.1.20、Compose BOM 2025.04.01、TV Material 1.0.0；新增 Media3 1.5.1 和 ZXing Core 3.5.3。compile/target SDK 35、minSdk 23；构建 JDK 21，字节码目标 17。
+版本沿用 AGP 8.9.2、Gradle 8.11.1、Kotlin 2.1.20、Compose BOM 2025.04.01、TV Material 1.0.0；新增 Media3 1.5.1 和 ZXing Core 3.5.3。compile/target SDK 35、minSdk 21（Android 5.0/5.1）；构建 JDK 21，字节码目标 17。
 
 ```sh
 # 根目录：单元测试、编译 debug APK 并执行 lint
@@ -17,6 +17,16 @@ make build
 ```
 
 设置 ANDROID_HOME 或本地 local.properties（不得提交本机 SDK 路径），安装 SDK 35 / Build Tools 35.0.0。APK 位于 `app/build/outputs/apk/debug/`，不提交生成产物。
+
+### Android 5 与老电视播放
+
+Android 5.0/5.1（API 21/22）首次运行默认开启「老电视兼容」，在「播放设置 → 同步设置」可切换自动检测或兼容模式。兼容档只报告 H.264、最高 1280×720 / 30fps / 4Mbps、8-bit SDR 和双声道，优先使用设备实际报告的 Baseline、最高 Level 3.1；更弱的解码器继续收紧限制。HLS 使用 MPEG-TS 分片。自动检测模式沿用原有能力报告与 fMP4；解码/封装失败仅重试一次，重试使用兼容档并请求 NAS 转码，网络和授权错误不触发转码。
+
+Go 负责选择直放、换封装、音频转码或视频转码，compute 输出 H.264 / AAC-LC 并保留原伴唱轨道和立体声左右声道。NAS 仍需按实际源格式、硬件加速和播放并发压测；没有可用计算节点时，应先准备兼容的离线版本。客户端继续负责歌词、原伴唱切换和同步。
+
+API 21/22 使用 AndroidKeyStore RSA 包装随机 AES 数据密钥，凭证仍以 AES-GCM 加密保存；API 23+ 使用原生 Keystore AES。API 21/22 采用系统默认音频输出，HDMI / 蓝牙切换在电视设置中完成。普通 Android 电视桌面与 Leanback 均可启动。Java 标准库 API 通过 core library desugaring 兼容，不提升 Media3 / Compose 版本。
+
+设备验收至少覆盖 API 21、API 22 的 ARM32 电视：首次授权及重启、720p 连播、切歌/拖动、原伴唱与左右声道、歌词同步、断网恢复和安装更新。`TvAndroid5CompatibilityTest` 提供隔离的凭证持久化/密钥失效与能力报告检查；只编译该测试不代表完成设备验收。
 
 ### 模拟器遥控 UI 检查
 

@@ -70,9 +70,11 @@ def asset(release, name):
 
 def check_metadata(metadata, version, platform="tv"):
     expected = dict(schemaVersion=1, platform=platform, packageName="com.mynora.singverse." + platform,
-                    versionName=version, versionCode=version_code(version), minSdk=23 if platform == "tv" else 24)
+                    versionName=version, versionCode=version_code(version))
     if any(type(metadata.get(k)) is not type(value) or metadata.get(k) != value for k, value in expected.items()):
         raise ValueError("Published release metadata differs from its tag")
+    if type(metadata.get("minSdk")) is not int or metadata["minSdk"] < (21 if platform == "tv" else 24):
+        raise ValueError("Published release minSdk is invalid")
     if not isinstance(metadata.get("certificateSha256"), str) or not HEX.fullmatch(metadata["certificateSha256"]):
         raise ValueError("Published release certificate is invalid")
     if not isinstance(metadata.get("sha256"), str) or not HEX.fullmatch(metadata["sha256"]):

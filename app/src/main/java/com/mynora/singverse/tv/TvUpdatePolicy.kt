@@ -24,7 +24,7 @@ internal data class TvRelease(
     init {
         require(versionCode > 0 && versionName.isNotBlank()) { "安装包版本信息无效" }
         require(packageName == "com.mynora.singverse.tv") { "安装包不是 SingVerse TV" }
-        require(minSdk >= 23 && size in 1..MAX_APK_SIZE) { "安装包系统要求或大小无效" }
+        require(minSdk >= 21 && size in 1..MAX_APK_SIZE) { "安装包系统要求或大小无效" }
         require(sha256.matches(Regex("[a-f0-9]{64}")) && certificateSha256.matches(Regex("[a-f0-9]{64}"))) { "安装包摘要或证书信息无效" }
         require(url == TV_APK_PATH) { "安装包地址必须来自当前 NAS" }
     }

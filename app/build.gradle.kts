@@ -19,8 +19,10 @@ android {
     useLibrary("android.test.base", false)
     defaultConfig {
         applicationId = "com.mynora.singverse.tv"
-        minSdk = 23
+        minSdk = 21
         targetSdk = 35
+        // Keep the explicit API 21–23 PNGs; do not replace them with small auto-rasterized vectors.
+        vectorDrawables.generatedDensities()
         testInstrumentationRunner = "com.mynora.singverse.tv.TvUiTestRunner"
         versionCode = productVersionCode.toInt()
         versionName = productVersion
@@ -39,10 +41,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")

@@ -18,14 +18,17 @@ object PlaybackCapabilities {
     private fun levelRank(level: Int) = if (level == 9) 10.5 else level.toDouble()
     // Codec enumeration may load vendor services. Cache off the UI thread, returning a fresh JSON value.
     private val snapshot: String by lazy { detect().toString() }
-    suspend fun report(): JSONObject = withContext(Dispatchers.Default) { JSONObject(snapshot) }
+    private val compatibilitySnapshot: String by lazy { detect(compatible = true).toString() }
+    suspend fun report(compatible: Boolean = false): JSONObject = withContext(Dispatchers.Default) {
+        JSONObject(if (compatible) compatibilitySnapshot else snapshot)
+    }
 
-    private fun detect(): JSONObject {
+    private fun detect(compatible: Boolean = false): JSONObject {
         val codecs = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { !it.isEncoder }
         fun supports(mime: String) = codecs.any { codec -> codec.supportedTypes.any { it.equals(mime, true) } }
         val avcLevels = mutableMapOf<String, Int>()
         val videoLimits = compatibleVideoLimits(listOf("h264" to MediaFormat.MIMETYPE_VIDEO_AVC, "hevc" to MediaFormat.MIMETYPE_VIDEO_HEVC,
-            "vp9" to MediaFormat.MIMETYPE_VIDEO_VP9, "av1" to "video/av01").mapNotNull { (name, mime) ->
+            "vp9" to MediaFormat.MIMETYPE_VIDEO_VP9, "av1" to "video/av01").filter { !compatible || it.first == "h264" }.mapNotNull { (name, mime) ->
             val candidates = codecs.filter { codec -> codec.supportedTypes.any { it.equals(mime, true) } }.mapNotNull { codec ->
                 runCatching {
                     val capabilities = codec.getCapabilitiesForType(mime)
@@ -36,8 +39,9 @@ object PlaybackCapabilities {
                         val level = avcLevel(value.level)
                         if (profile != null && level > 0 && levelRank(level) > levelRank(profiles[profile] ?: 0)) profiles[profile] = level
                     }
-                    val bitrate = video.bitrateRange.upper.coerceAtMost(8_000_000)
-                    if (name == "h264") avcCandidate(profiles, bitrate) { width, height, fps ->
+                    val bitrate = video.bitrateRange.upper.coerceAtMost(if (compatible) 4_000_000 else 8_000_000)
+                    if (name == "h264") avcCandidate(if (compatible) compatibilityProfiles(profiles) else profiles, bitrate,
+                        maxWidth = if (compatible) 1280 else 1920, maxHeight = if (compatible) 720 else 1080) { width, height, fps ->
                         width % video.widthAlignment == 0 && height % video.heightAlignment == 0 && video.areSizeAndRateSupported(width, height, fps.toDouble())
                     } else pictures.firstOrNull { (width, height) -> video.areSizeAndRateSupported(width, height, 30.0) }
                         ?.let { DecoderLimit(it.first, it.second, bitrate) }
@@ -56,10 +60,10 @@ object PlaybackCapabilities {
         val audio = listOf("aac" to MediaFormat.MIMETYPE_AUDIO_AAC, "mp3" to MediaFormat.MIMETYPE_AUDIO_MPEG,
             "flac" to MediaFormat.MIMETYPE_AUDIO_FLAC, "opus" to MediaFormat.MIMETYPE_AUDIO_OPUS,
             "vorbis" to MediaFormat.MIMETYPE_AUDIO_VORBIS, "ac3" to MediaFormat.MIMETYPE_AUDIO_AC3)
-            .filter { supports(it.second) }.map { it.first } + "pcm_s16le"
+            .filter { (!compatible || it.first in listOf("aac", "mp3")) && supports(it.second) }.map { it.first } + "pcm_s16le"
         return JSONObject().put("family","android-tv").put("video",JSONArray(videoLimits.map { it.first })).put("audio",JSONArray(audio))
-            .put("containers",JSONArray(listOf("mp4","mkv","webm","ts","mp3","flac","ogg","wav")))
-            .put("hls",true).put("fmp4",true).put("max_width",width).put("max_height",height)
+            .put("containers",JSONArray(if (compatible) listOf("mp4","ts","mp3","wav") else listOf("mp4","mkv","webm","ts","mp3","flac","ogg","wav")))
+            .put("hls",true).put("fmp4",!compatible).put("max_width",width).put("max_height",height)
             .put("max_fps",fps).put("max_bitrate",bitrate).put("max_channels",2).put("max_bit_depth",8).put("hdr",false)
             .put("profiles",JSONObject().put("h264",JSONArray(avcLevels.keys.toList())))
             .put("levels",JSONObject().put("h264",avcLevels.values.minOrNull() ?: 0))
@@ -71,12 +75,20 @@ object PlaybackCapabilities {
         return limits.filter { (_, value) -> value.width >= primary.width && value.height >= primary.height && value.bitrate >= primary.bitrate && value.fps >= primary.fps }
     }
 
-    internal fun avcCandidate(profiles: Map<String, Int>, bitrate: Int, accepts: (Int, Int, Int) -> Boolean): DecoderLimit? {
+    internal fun compatibilityProfiles(profiles: Map<String, Int>): Map<String, Int> {
+        val profile = listOf("Baseline", "Constrained Baseline", "Main", "High").firstOrNull { (profiles[it] ?: 0) > 0 }
+            ?: return emptyMap()
+        return mapOf(profile to minOf(profiles.getValue(profile), 31))
+    }
+
+    internal fun avcCandidate(profiles: Map<String, Int>, bitrate: Int, maxWidth: Int = 1920, maxHeight: Int = 1080,
+                             accepts: (Int, Int, Int) -> Boolean): DecoderLimit? {
         val level = profiles.values.maxByOrNull(::levelRank) ?: return null
         val blocks = avcBlocks[if (level >= 40) 40 else level] ?: return null
         // One global level cannot describe High31 + Baseline41 as High41.
         val reported = profiles.filterValues { it == level }
         for ((width, height) in pictures) {
+            if (width > maxWidth || height > maxHeight) continue
             val picture = ((width + 15) / 16) * ((height + 15) / 16)
             if (picture > blocks.first) continue
             val maximumFps = minOf(30, blocks.second / picture)
