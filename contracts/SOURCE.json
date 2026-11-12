@@ -1,0 +1,87 @@
+{
+  "repository": "mynora-dot/singverse-go-backend",
+  "revision": "6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a",
+  "files": {
+    "contracts/background-tasks.md": {
+      "sha256": "d5e4c4ba216de78e94857d80d30b4525c3ab9fce5924c0865aa07f7acb03f11e"
+    },
+    "contracts/client-updates.md": {
+      "sha256": "f35857e399ff06036bdb7db6e40f792b6f2fbdd5bece55ef9d384d4c0af60c97"
+    },
+    "contracts/frontend-hosting.md": {
+      "sha256": "af1d30e1ebbabd766df669302609c6129245befb7ec875452c384acc2d2474ba"
+    },
+    "contracts/go-migration-baseline.json": {
+      "sha256": "8a7d6b36feec16702b76169c44c3d54b9cd75e7f0cf19b977672ce3c0787213c"
+    },
+    "contracts/go-scheduled-migration.md": {
+      "sha256": "0c1fc5b0b9068f4ae4576cd06594c7ea410df66ac8768766c9508cf46e5420ce"
+    },
+    "contracts/metadata/README.md": {
+      "sha256": "85a9761d5b421d0d7620156558dc6351a13886fdf8cbe386c39baebd94cb145d"
+    },
+    "contracts/metadata/examples/README.md": {
+      "sha256": "4d8df73a02f399ac1d98d7b64918459543e2d18cd5ebbbbc4fa6a12e40c563ae"
+    },
+    "contracts/metadata/examples/artist.valid.json": {
+      "sha256": "5e9660665d4db83ecd39134edb9d66bacffdce72d9aa21e3549ad1888694dcb4"
+    },
+    "contracts/metadata/examples/clear-with-value.invalid.json": {
+      "sha256": "ecaea1a4127960c466079dc4d3eb382df37d0ce9722503f7c519516f6ca42620"
+    },
+    "contracts/metadata/examples/duplicate-key.invalid.json": {
+      "sha256": "a662d29f3b216f19b63558a769db8bfdf0810da7debfc8f848d5dac8440d395d"
+    },
+    "contracts/metadata/examples/impossible-date.invalid.json": {
+      "sha256": "ba3f1cf9591cb9c1dd80e66b1371943237fec233d1c0cde26c51778491c4832e"
+    },
+    "contracts/metadata/examples/media.valid.json": {
+      "sha256": "aa8d6a52f226da1ba0983b155e2a0661e87ca6e49f37e683ac940b0b19099388"
+    },
+    "contracts/metadata/examples/numeric-platform-id.invalid.json": {
+      "sha256": "5b165dc7cacca6d5e15aa5d04cb7c35bda5dfaab7aaa2323c0cf62d77645a230"
+    },
+    "contracts/metadata/examples/song.valid.json": {
+      "sha256": "64b165718c0660ef804361a1032920cec89d18baa63c7c7ac55aa265e1714308"
+    },
+    "contracts/metadata/examples/variant.valid.json": {
+      "sha256": "463e03232af75c2b232efcaa8c3c989d2cf0711aa39ff1919f5f65134c83bee7"
+    },
+    "contracts/metadata/examples/work.valid.json": {
+      "sha256": "a0232ef2abecd0bb6da591e05ca192530ce49139ad5cc9d2f96592180650d9ea"
+    },
+    "contracts/metadata/fields.md": {
+      "sha256": "79e339763da604d0f434fc9aa33ffe12114642cc1da99cff20e28d859bdde9f5"
+    },
+    "contracts/metadata/metadata.schema.json": {
+      "sha256": "57bf9957affce3fd8416339156094b969d64a4133aed0536157603e1a32be68f"
+    },
+    "contracts/metadata/package-v4.md": {
+      "sha256": "31768c8df32d1d1678dced03a4259ec47871e951571a07c4448e66efbaa0fb60"
+    },
+    "contracts/metadata/package-v4.schema.json": {
+      "sha256": "ff3481deba183bb5cc295dccc185abc37d9b80da0de53b48b59dc5503f220095"
+    },
+    "contracts/mobile-karaoke.md": {
+      "sha256": "69043de4096f7df473cca354364b9e6ae4451780d9ece54b15e5ffc7e6d6733d"
+    },
+    "contracts/openapi/README.md": {
+      "sha256": "2567b1c939dbc4ad86ac2ccc7c711ce8f6e71d44886f477b32803407fb61af63"
+    },
+    "contracts/openapi/auth-test-vectors.json": {
+      "sha256": "d1d9cca13627c3c54cbb97a3cc57c8e592721ac50db1390ccd54977912109e04"
+    },
+    "contracts/openapi/compute-internal.openapi.json": {
+      "sha256": "791094bcbdce4e7adad9a76e92e270e0cdca1e57d2d3a649388836816ad0776c"
+    },
+    "contracts/openapi/singverse.openapi.json": {
+      "sha256": "b7c8132ecb2a421637be5950a2ae3b0cc6af6dd21d6d89015d758f768082eeae"
+    },
+    "contracts/song-activity.md": {
+      "sha256": "6448ae8754bc101c39948aa290aa9d79088885f75150f2a74e96c354446542d2"
+    },
+    "contracts/song-cache.md": {
+      "sha256": "f7af7f7befbf57e2721eebd86f72016075e273a3e3d166f292949188e2361036"
+    }
+  }
+}

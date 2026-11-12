@@ -1,0 +1,44 @@
+# Credentials and local SDK configuration
+.env
+.env.*
+!.env.example
+local.properties
+key.properties
+*.jks
+*.keystore
+*.pem
+*.key
+*.p12
+*.pfx
+*.token
+*-token
+credentials.json
+secrets/
+# IDE and operating system
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.swp
+# Gradle and generated output
+.gradle/
+.kotlin/
+**/build/
+.tools/
+.tmp/
+tmp/
+test-output/
+captures/
+*.log
+*.apk
+*.aab
+*.apks
+*.hprof
+*.part
+*.pid
+# Preserve the repository Gradle Wrapper
+!gradle/wrapper/gradle-wrapper.jar
+
+# Python release tooling cache
+__pycache__/
+*.py[cod]

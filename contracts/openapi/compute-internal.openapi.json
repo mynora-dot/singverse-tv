@@ -1,0 +1,2810 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SingVerse Compute Internal API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "进程健康，不表示计算能力可用",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/capabilities": {
+      "get": {
+        "summary": "已实现并可使用的计算能力",
+        "operationId": "capabilities_internal_v1_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/status": {
+      "get": {
+        "summary": "鉴权后的服务身份与能力",
+        "operationId": "status_internal_v1_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Node credential file unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/callback/check": {
+      "post": {
+        "summary": "Callback Check",
+        "operationId": "callback_check_internal_v1_callback_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackCheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/lan/discovery": {
+      "get": {
+        "tags": [
+          "LAN pairing"
+        ],
+        "summary": "私网单播节点发现，不返回凭据",
+        "operationId": "discovery_internal_v1_lan_discovery_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Discovery"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Direct private peer and IP literal Host required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Persistent identity unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/lan/challenge": {
+      "post": {
+        "tags": [
+          "LAN pairing"
+        ],
+        "summary": "创建绑定节点、客户端身份和私网来源的一次性挑战",
+        "operationId": "challenge_internal_v1_lan_challenge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Challenge"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pairing disabled or private boundary rejected",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Node already owned or identity changed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Challenge or rate limit reached",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Persistent identity unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/lan/pair": {
+      "post": {
+        "tags": [
+          "LAN pairing"
+        ],
+        "summary": "签名配对或同身份恢复，仅返回 RSA 加密后的内部凭据",
+        "operationId": "pair_internal_v1_lan_pair_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid signature, challenge or client identity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pairing disabled or private boundary rejected",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Node already owned or identity changed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit reached",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Persistent identity unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "title": "Type",
+                      "default": "about:blank"
+                    },
+                    "title": {
+                      "type": "string",
+                      "title": "Title"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "title": "Status"
+                    },
+                    "instance": {
+                      "type": "string",
+                      "title": "Instance"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "title",
+                    "status",
+                    "instance"
+                  ],
+                  "title": "Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/media/remote-tags": {
+      "post": {
+        "summary": "Remote Tags",
+        "operationId": "remote_tags_internal_v1_media_remote_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/singverse_compute__api__routers__remote_tags__Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/transcoding/capabilities": {
+      "get": {
+        "summary": "Capabilities",
+        "operationId": "capabilities_internal_v1_transcoding_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/transcoding/probe": {
+      "post": {
+        "summary": "Probe",
+        "operationId": "probe_internal_v1_transcoding_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/singverse_compute__api__routers__transcoding__Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/transcoding/negotiate": {
+      "post": {
+        "summary": "Negotiate",
+        "operationId": "negotiate_internal_v1_transcoding_negotiate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Negotiate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/transcoding/executions": {
+      "post": {
+        "summary": "Create",
+        "operationId": "create_internal_v1_transcoding_executions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Create"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/transcoding/executions/{identifier}": {
+      "get": {
+        "summary": "Status",
+        "operationId": "status_internal_v1_transcoding_executions__identifier__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove",
+        "operationId": "remove_internal_v1_transcoding_executions__identifier__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/transcoding/executions/{identifier}/lease": {
+      "post": {
+        "summary": "Lease",
+        "operationId": "lease_internal_v1_transcoding_executions__identifier__lease_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/transcoding/executions/{identifier}/cancel": {
+      "post": {
+        "summary": "Cancel",
+        "operationId": "cancel_internal_v1_transcoding_executions__identifier__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/transcoding/executions/{identifier}/artifacts/{name}": {
+      "get": {
+        "summary": "Artifact",
+        "operationId": "artifact_internal_v1_transcoding_executions__identifier__artifacts__name__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/transcoding/executions/{identifier}/acknowledge": {
+      "post": {
+        "summary": "Acknowledge",
+        "operationId": "acknowledge_internal_v1_transcoding_executions__identifier__acknowledge_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/transcoding/executions/{identifier}/export": {
+      "get": {
+        "summary": "Export",
+        "operationId": "export_internal_v1_transcoding_executions__identifier__export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactExport"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a complete realtime HLS execution"
+          },
+          "410": {
+            "description": "Execution artifacts already released"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/transcoding/hardware-settings": {
+      "get": {
+        "summary": "Hardware Settings",
+        "operationId": "hardware_settings_internal_v1_transcoding_hardware_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Save Hardware",
+        "operationId": "save_hardware_internal_v1_transcoding_hardware_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HardwareSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/transcoding/hardware-settings/test": {
+      "post": {
+        "summary": "Test Hardware",
+        "operationId": "test_hardware_internal_v1_transcoding_hardware_settings_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HardwareSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/audio-roles/tasks": {
+      "post": {
+        "summary": "Submit",
+        "description": "FAST reads paired explicit role labels first; otherwise compares paired vocal scores on three short dual-track excerpts with optional PANNs Cnn6 (fast-vocal-v2), adding up to three excerpts only for sparse evidence. Missing classifier or ambiguous evidence remains UNKNOWN, with no automatic separation fallback. ANALYZE is explicit deep recognition and uses up to five disjoint windows, first trying two. Task result includes state, reason for UNKNOWN, and evidence with analysisVersion=vocal-activity-v2, vocalRatio pairs, votes, informativeWindows and window activity. Silent intervals abstain; conflicting directions or labels remain UNKNOWN. Ratios are evidence, not probabilities. Existing task identifiers retain idempotency; Go creates a new identifier for explicit re-analysis of an UNKNOWN result.",
+        "operationId": "submit_internal_v1_audio_roles_tasks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Submit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/audio-roles/models": {
+      "get": {
+        "summary": "Models",
+        "operationId": "models_internal_v1_audio_roles_models_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/audio-roles/models/download": {
+      "post": {
+        "summary": "Download",
+        "operationId": "download_internal_v1_audio_roles_models_download_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "htdemucs",
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/audio-roles/models/cancel": {
+      "post": {
+        "summary": "Stop Model",
+        "operationId": "stop_model_internal_v1_audio_roles_models_cancel_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/audio-roles/models/test": {
+      "post": {
+        "summary": "Test Model",
+        "operationId": "test_model_internal_v1_audio_roles_models_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Backend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/audio-roles/models/select": {
+      "post": {
+        "summary": "Select Model",
+        "operationId": "select_model_internal_v1_audio_roles_models_select_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Backend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/audio-roles/models/import": {
+      "post": {
+        "summary": "Import Model",
+        "operationId": "import_model_internal_v1_audio_roles_models_import_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "htdemucs",
+              "title": "Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/audio-roles/tasks/{identifier}": {
+      "get": {
+        "summary": "View",
+        "operationId": "view_internal_v1_audio_roles_tasks__identifier__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/audio-roles/tasks/{identifier}/cancel": {
+      "post": {
+        "summary": "Cancel",
+        "operationId": "cancel_internal_v1_audio_roles_tasks__identifier__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/audio-roles/tasks/{identifier}/artifact": {
+      "get": {
+        "summary": "Artifact",
+        "operationId": "artifact_internal_v1_audio_roles_tasks__identifier__artifact_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/audio-roles/tasks/{identifier}/release": {
+      "post": {
+        "summary": "Release",
+        "operationId": "release_internal_v1_audio_roles_tasks__identifier__release_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ArtifactDigest": {
+        "properties": {
+          "size": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Size"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "size",
+          "sha256"
+        ],
+        "title": "ArtifactDigest"
+      },
+      "ArtifactExport": {
+        "properties": {
+          "artifacts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ArtifactDigest"
+            },
+            "type": "object",
+            "title": "Artifacts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "artifacts"
+        ],
+        "title": "ArtifactExport"
+      },
+      "Backend": {
+        "properties": {
+          "backend": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "cpu",
+              "cuda",
+              "rocm",
+              "mps",
+              "openvino",
+              "openvino-cpu",
+              "xpu",
+              "rknn",
+              "tensorrt",
+              "migraphx",
+              "coreml",
+              "directml",
+              "mlx"
+            ],
+            "title": "Backend"
+          },
+          "separationProfile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "AI_CLEAN",
+                  "LEGACY_DEMUCS"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Separationprofile"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "backend"
+        ],
+        "title": "Backend"
+      },
+      "CallbackCheck": {
+        "properties": {
+          "callbackOrigin": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Callbackorigin"
+          },
+          "reference": {
+            "type": "string",
+            "pattern": "^[a-f0-9-]{36}$",
+            "title": "Reference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "callbackOrigin",
+          "reference"
+        ],
+        "title": "CallbackCheck"
+      },
+      "Capabilities": {
+        "properties": {
+          "service": {
+            "type": "string",
+            "const": "singverse-compute",
+            "title": "Service",
+            "default": "singverse-compute"
+          },
+          "apiVersion": {
+            "type": "string",
+            "const": "1",
+            "title": "Apiversion",
+            "default": "1"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          }
+        },
+        "type": "object",
+        "title": "Capabilities"
+      },
+      "Challenge": {
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$",
+            "title": "Nodeid"
+          },
+          "challenge": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Challenge"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodeId",
+          "challenge"
+        ],
+        "title": "Challenge"
+      },
+      "ChallengeRequest": {
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$",
+            "title": "Nodeid"
+          },
+          "clientId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Clientid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nodeId",
+          "clientId"
+        ],
+        "title": "ChallengeRequest"
+      },
+      "ClientInput": {
+        "properties": {
+          "family": {
+            "type": "string",
+            "enum": [
+              "generic",
+              "browser",
+              "android",
+              "android-tv",
+              "fire-tv",
+              "ios",
+              "ipados",
+              "tvos",
+              "roku",
+              "tizen",
+              "webos",
+              "kodi",
+              "desktop"
+            ],
+            "title": "Family",
+            "default": "generic"
+          },
+          "containers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Containers",
+            "default": [
+              "mp4"
+            ]
+          },
+          "video": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Video",
+            "default": [
+              "h264"
+            ]
+          },
+          "audio": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Audio",
+            "default": [
+              "aac"
+            ]
+          },
+          "subtitles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Subtitles",
+            "default": [
+              "webvtt"
+            ]
+          },
+          "max_width": {
+            "type": "integer",
+            "maximum": 16384.0,
+            "minimum": 2.0,
+            "title": "Max Width",
+            "default": 1920
+          },
+          "max_height": {
+            "type": "integer",
+            "maximum": 16384.0,
+            "minimum": 2.0,
+            "title": "Max Height",
+            "default": 1080
+          },
+          "max_fps": {
+            "type": "number",
+            "maximum": 240.0,
+            "minimum": 1.0,
+            "title": "Max Fps",
+            "default": 30
+          },
+          "max_bitrate": {
+            "type": "integer",
+            "maximum": 500000000.0,
+            "minimum": 64000.0,
+            "title": "Max Bitrate",
+            "default": 8000000
+          },
+          "max_channels": {
+            "type": "integer",
+            "maximum": 16.0,
+            "minimum": 2.0,
+            "title": "Max Channels",
+            "default": 2
+          },
+          "max_bit_depth": {
+            "type": "integer",
+            "maximum": 16.0,
+            "minimum": 8.0,
+            "title": "Max Bit Depth",
+            "default": 8
+          },
+          "hdr": {
+            "type": "boolean",
+            "title": "Hdr",
+            "default": false
+          },
+          "hdr_formats": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "HDR10",
+                "HLG"
+              ]
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Hdr Formats",
+            "default": [
+              "HDR10",
+              "HLG"
+            ]
+          },
+          "dovi_profiles": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Dovi Profiles"
+          },
+          "dovi_compatibility": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Dovi Compatibility"
+          },
+          "hls": {
+            "type": "boolean",
+            "title": "Hls",
+            "default": true
+          },
+          "fmp4": {
+            "type": "boolean",
+            "title": "Fmp4",
+            "default": false
+          },
+          "profiles": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "maxProperties": 32,
+            "title": "Profiles"
+          },
+          "levels": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "maxProperties": 32,
+            "title": "Levels"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ClientInput"
+      },
+      "Create": {
+        "properties": {
+          "callbackOrigin": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Callbackorigin"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9-]{36}$",
+            "title": "Id"
+          },
+          "fingerprint": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Fingerprint"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetInput"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "callbackOrigin",
+          "id",
+          "fingerprint"
+        ],
+        "title": "Create"
+      },
+      "Discovery": {
+        "properties": {
+          "service": {
+            "type": "string",
+            "title": "Service",
+            "default": "singverse-compute"
+          },
+          "apiVersion": {
+            "type": "string",
+            "title": "Apiversion",
+            "default": "1"
+          },
+          "nodeId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$",
+            "title": "Nodeid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "ownerId": {
+            "type": "string",
+            "title": "Ownerid"
+          },
+          "pairingEnabled": {
+            "type": "boolean",
+            "title": "Pairingenabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodeId",
+          "name",
+          "ownerId",
+          "pairingEnabled"
+        ],
+        "title": "Discovery"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HardwareSave": {
+        "properties": {
+          "backend": {
+            "type": "string",
+            "enum": [
+              "deployment",
+              "auto",
+              "software",
+              "qsv",
+              "vaapi",
+              "nvenc",
+              "amf",
+              "videotoolbox",
+              "rkmpp"
+            ],
+            "title": "Backend"
+          },
+          "cpuFallback": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpufallback"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "backend",
+          "revision"
+        ],
+        "title": "HardwareSave"
+      },
+      "HardwareSelection": {
+        "properties": {
+          "backend": {
+            "type": "string",
+            "enum": [
+              "deployment",
+              "auto",
+              "software",
+              "qsv",
+              "vaapi",
+              "nvenc",
+              "amf",
+              "videotoolbox",
+              "rkmpp"
+            ],
+            "title": "Backend"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "backend"
+        ],
+        "title": "HardwareSelection"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "UP",
+            "title": "Status",
+            "default": "UP"
+          }
+        },
+        "type": "object",
+        "title": "Health"
+      },
+      "Negotiate": {
+        "properties": {
+          "callbackOrigin": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Callbackorigin"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientInput"
+          },
+          "burn_subtitle": {
+            "type": "boolean",
+            "title": "Burn Subtitle",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "callbackOrigin"
+        ],
+        "title": "Negotiate"
+      },
+      "PairRequest": {
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$",
+            "title": "Nodeid"
+          },
+          "clientId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Clientid"
+          },
+          "publicKey": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Publickey"
+          },
+          "challenge": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Challenge"
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Signature"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nodeId",
+          "clientId",
+          "publicKey",
+          "challenge",
+          "signature"
+        ],
+        "title": "PairRequest"
+      },
+      "PairResult": {
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$",
+            "title": "Nodeid"
+          },
+          "challenge": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Challenge"
+          },
+          "encryptedToken": {
+            "type": "string",
+            "title": "Encryptedtoken"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodeId",
+          "challenge",
+          "encryptedToken"
+        ],
+        "title": "PairResult"
+      },
+      "Submit": {
+        "properties": {
+          "callbackOrigin": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Callbackorigin"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9-]{36}$",
+            "title": "Id"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "PROBE",
+              "FAST",
+              "ANALYZE",
+              "SEPARATE"
+            ],
+            "title": "Mode"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cpu",
+                  "cuda",
+                  "rocm",
+                  "mps",
+                  "openvino",
+                  "openvino-cpu",
+                  "tensorrt",
+                  "migraphx",
+                  "coreml",
+                  "directml",
+                  "rknn",
+                  "mlx"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "separationProfile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "DSP_FAST",
+                  "AI_CLEAN",
+                  "LEGACY_DEMUCS"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Separationprofile"
+          },
+          "modelId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "uvr-mdxnet-9482",
+                  "center-cancel-v1",
+                  "htdemucs"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelid"
+          },
+          "outputFormat": {
+            "type": "string",
+            "enum": [
+              "aac",
+              "flac"
+            ],
+            "title": "Outputformat",
+            "default": "aac"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "default": false
+          },
+          "sourceAudioId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^stream:[0-9]{1,3}(?::(?:LEFT|RIGHT))?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceaudioid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "callbackOrigin",
+          "id",
+          "mode"
+        ],
+        "title": "Submit"
+      },
+      "TargetInput": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "REMUX",
+              "AUDIO_TRANSCODE",
+              "TRANSCODE"
+            ],
+            "title": "Mode",
+            "default": "TRANSCODE"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "REALTIME",
+              "OFFLINE"
+            ],
+            "title": "Purpose",
+            "default": "REALTIME"
+          },
+          "codec": {
+            "type": "string",
+            "enum": [
+              "h264",
+              "hevc",
+              "av1"
+            ],
+            "title": "Codec",
+            "default": "h264"
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "",
+              "baseline",
+              "main",
+              "high"
+            ],
+            "title": "Profile",
+            "default": ""
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              9,
+              10,
+              11,
+              12,
+              13,
+              20,
+              21,
+              22,
+              30,
+              31,
+              32,
+              40,
+              41,
+              42,
+              50,
+              51,
+              52,
+              60,
+              61,
+              62
+            ],
+            "title": "Level",
+            "default": 0
+          },
+          "width": {
+            "type": "integer",
+            "maximum": 7680.0,
+            "minimum": 2.0,
+            "title": "Width",
+            "default": 1920
+          },
+          "height": {
+            "type": "integer",
+            "maximum": 4320.0,
+            "minimum": 2.0,
+            "title": "Height",
+            "default": 1080
+          },
+          "bitrate": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": 64000.0,
+            "title": "Bitrate",
+            "default": 8000000
+          },
+          "audio_bitrate": {
+            "type": "integer",
+            "maximum": 512000.0,
+            "minimum": 32000.0,
+            "title": "Audio Bitrate",
+            "default": 192000
+          },
+          "max_channels": {
+            "type": "integer",
+            "maximum": 16.0,
+            "minimum": 2.0,
+            "title": "Max Channels",
+            "default": 2
+          },
+          "fps": {
+            "type": "number",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Fps",
+            "default": 30
+          },
+          "fmp4": {
+            "type": "boolean",
+            "title": "Fmp4",
+            "default": false
+          },
+          "start": {
+            "type": "number",
+            "maximum": 86400.0,
+            "minimum": 0.0,
+            "title": "Start",
+            "default": 0
+          },
+          "audio_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^stream:[0-9]{1,3}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Id"
+          },
+          "subtitle_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^stream:[0-9]{1,3}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitle Id"
+          },
+          "burn_subtitle": {
+            "type": "boolean",
+            "title": "Burn Subtitle",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TargetInput"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "singverse_compute__api__routers__remote_tags__Input": {
+        "properties": {
+          "callbackOrigin": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Callbackorigin"
+          },
+          "reference": {
+            "type": "string",
+            "pattern": "^[a-f0-9-]{36}$",
+            "title": "Reference"
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Filename"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "deep": {
+            "type": "boolean",
+            "title": "Deep",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "callbackOrigin",
+          "reference",
+          "filename"
+        ],
+        "title": "Input"
+      },
+      "singverse_compute__api__routers__transcoding__Input": {
+        "properties": {
+          "callbackOrigin": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Callbackorigin"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "callbackOrigin"
+        ],
+        "title": "Input"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
