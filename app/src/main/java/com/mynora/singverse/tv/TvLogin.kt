@@ -1,22 +1,27 @@
 package com.mynora.singverse.tv
 
 import android.content.Context
-import android.os.SystemClock
 import androidx.compose.runtime.*
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** Owns only the unconnected login flow; leaving a flow invalidates every delayed response. */
-internal class TvLogin(context: Context, private val discovery: NasDiscovery, private val authorized: suspend (String, String) -> Unit) {
+internal class TvLogin(context: Context, private val discovery: NasDiscovery, private val pairingLifetimeMillis: Long = 300_000, private val authorized: suspend (String, String) -> Unit) {
     private val preferences = context.getSharedPreferences("recent-nas", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
     private var admin: LoginHttp? = null
     private var generation = 0
-    private var pending: JSONObject? = null
-    private var deadline = 0L
     var page by mutableStateOf(LoginPage.METHODS); private set
+    var selectedMethod by mutableStateOf(LoginPage.MANUAL); private set
+    var pairingStage by mutableStateOf(PairingStage.STARTING); private set
+    var qrUrl by mutableStateOf(""); private set
+    var pairingMessage by mutableStateOf(""); private set
+    private var pairing: TvPairingServer? = null
+    private var pairingTimer: Job? = null
+    private var pairingConnection: Deferred<Unit>? = null
+    private var pairingGeneration = 0
     var protocol by mutableStateOf("http")
     var host by mutableStateOf("")
     var username by mutableStateOf("admin")
@@ -27,10 +32,6 @@ internal class TvLogin(context: Context, private val discovery: NasDiscovery, pr
     var serverName by mutableStateOf("") ; private set
     var busy by mutableStateOf(false); private set
     var error by mutableStateOf(""); private set
-    var qrUrl by mutableStateOf(""); private set
-    var authorizationCode by mutableStateOf(""); private set
-    var remaining by mutableIntStateOf(0); private set
-    var qrRequested by mutableStateOf(false); private set
     private var loginUsername = ""
     var recent by mutableStateOf(readHistory()); private set
 
@@ -55,33 +56,123 @@ internal class TvLogin(context: Context, private val discovery: NasDiscovery, pr
         protocol = NasAddress.protocol(base); host = NasAddress.authority(base)
     }
 
-    fun open(destination: LoginPage, forQr: Boolean = false) {
+    fun open(destination: LoginPage) {
         cancel()
-        qrRequested = forQr
+        if (destination in listOf(LoginPage.MANUAL, LoginPage.DISCOVERY, LoginPage.QR)) selectedMethod = destination
         page = destination
         if (destination == LoginPage.DISCOVERY) discovery.start()
+        if (destination == LoginPage.QR) resumePairing()
     }
 
     fun select(name: String, address: String, account: String = "") {
-        val qr = qrRequested
         cancel()
         setAddress(address); serverName = name; username = account.ifBlank { "admin" }
-        qrRequested = qr; page = LoginPage.MANUAL
-        if (qr) startQr()
+        page = LoginPage.MANUAL
     }
 
     fun back(): Boolean {
         if (page == LoginPage.METHODS) return false
-        val target = if (page == LoginPage.QR) LoginPage.MANUAL else LoginPage.METHODS
-        open(target)
+        open(LoginPage.METHODS)
         return true
     }
 
+    fun resumePairing() {
+        if (page != LoginPage.QR || pairing != null || pairingStage == PairingStage.CONNECTED) return
+        refreshPairing()
+    }
+
+    fun pausePairing() {
+        pairingGeneration++
+        pairingTimer?.cancel(); pairingTimer = null
+        pairingConnection?.cancel(); pairingConnection = null
+        pairing?.close(); pairing = null; qrUrl = ""
+        pairingStage = PairingStage.STARTING
+    }
+
+    fun refreshPairing() {
+        pausePairing()
+        pairingStage = PairingStage.STARTING; pairingMessage = ""; loginUsername = ""
+        val turn = pairingGeneration
+        pairingTimer = scope.launch {
+            var startingServer: TvPairingServer? = null
+            try {
+                val host = withContext(Dispatchers.IO) { TvPairingServer.localHost() }
+                if (turn != pairingGeneration) return@launch
+                if (host == null) {
+                    pairingStage = PairingStage.OFFLINE
+                    pairingMessage = "请先将电视接入 Wi-Fi 或有线网络"
+                    return@launch
+                }
+                val server = withContext(Dispatchers.IO) {
+                    TvPairingServer(host, android.os.Build.MODEL.take(60).ifBlank { "SingVerse TV" }, scanned = {
+                        scope.launch { if (turn == pairingGeneration && pairingStage == PairingStage.WAITING) pairingStage = PairingStage.SCANNED }
+                    }, connect = { address, credential ->
+                        val completion = withContext(Dispatchers.Main.immediate) {
+                            check(turn == pairingGeneration && page == LoginPage.QR)
+                            scope.async {
+                                withTimeout(25_000) {
+                                    pairingStage = PairingStage.CONNECTING
+                                    val connection = address to credential
+                                    val info = TvApiTransport.request(connection, "/api/v1/server-info", "GET", null)
+                                    val serverInfo = JSONObject(info.body)
+                                    require(info.status == 200 && serverInfo.optString("service") == "singverse" && serverInfo.optInt("apiVersion") == 1) { "不是兼容的 SingVerse 音乐库" }
+                                    val home = TvApiTransport.request(connection, "/api/v1/tv/home", "GET", null)
+                                    require(home.status == 200) { "电视登录已失效，请在手机重新登录音乐库" }
+                                    currentCoroutineContext().ensureActive()
+                                    check(turn == pairingGeneration && page == LoginPage.QR)
+                                    serverName = serverInfo.optString("name")
+                                    authorized(address, credential)
+                                    pairingStage = PairingStage.CONNECTED
+                                    qrUrl = ""
+                                }
+                            }.also { pairingConnection = it }
+                        }
+                        try { completion.await() }
+                        catch (failure: Exception) {
+                            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                                if (turn == pairingGeneration) {
+                                    qrUrl = ""; pairingStage = PairingStage.FAILED
+                                    pairingMessage = failure.message ?: "未能连接音乐库，请刷新二维码重试"
+                                }
+                            }
+                            throw failure
+                        }
+                    }, lifetimeMillis = pairingLifetimeMillis).also { startingServer = it }
+                }
+                if (turn != pairingGeneration) { server.close(); return@launch }
+                pairing = server; qrUrl = server.code.encode(); pairingStage = PairingStage.WAITING
+                while (turn == pairingGeneration && pairingStage !in listOf(PairingStage.CONNECTED, PairingStage.FAILED)) {
+                    delay(1000)
+                    if (server.remainingSeconds <= 0 && pairingStage != PairingStage.CONNECTING) {
+                        server.close(); pairing = null; qrUrl = ""; pairingStage = PairingStage.EXPIRED
+                        break
+                    }
+                }
+                // Keep the completed attempt briefly available if the phone loses its reply.
+                // The QR is already hidden and the server cannot accept another attempt.
+                if (turn == pairingGeneration && pairingStage == PairingStage.CONNECTED) {
+                    delay(minOf(10_000L, server.remainingSeconds * 1000L))
+                }
+                if (turn == pairingGeneration && pairingStage in listOf(PairingStage.CONNECTED, PairingStage.FAILED)) {
+                    server.close(); pairing = null
+                }
+            } catch (cancelled: CancellationException) { startingServer?.close(); throw cancelled }
+            catch (_: Exception) {
+                startingServer?.close()
+                if (turn == pairingGeneration) {
+                    pairing?.close(); pairing = null; qrUrl = ""; pairingStage = PairingStage.OFFLINE
+                    pairingMessage = "暂时无法生成登录码，请检查电视网络后重试"
+                }
+            }
+        }
+    }
+
     fun cancel() {
+        pausePairing()
         generation++; val previousJob = job; previousJob?.cancel(); job = null
         val session = admin; admin = null
         if (session != null) scope.launch(start = CoroutineStart.UNDISPATCHED) { withContext(NonCancellable) { previousJob?.join(); runCatching { session.logout() } } }
-        discovery.stop(); pending = null; qrUrl = ""; authorizationCode = ""; remaining = 0
+        discovery.stop()
         password = ""; mfaCode = ""; mfaRequired = false; showPassword = false; error = ""; busy = false
     }
 
@@ -95,7 +186,6 @@ internal class TvLogin(context: Context, private val discovery: NasDiscovery, pr
             catch (failure: Exception) {
                 if (turn == generation) {
                     error = failure.message ?: "连接失败，请重试"
-                    if (page == LoginPage.QR) { qrUrl = ""; authorizationCode = ""; remaining = 0 }
                     // A failed MFA attempt may be retried with the same restricted challenge.
                     if (!mfaRequired) { val session = admin; admin = null; if (session != null) runCatching { session.logout() } }
                 }
@@ -109,23 +199,7 @@ internal class TvLogin(context: Context, private val discovery: NasDiscovery, pr
         check(turn == generation)
         require(info.optString("service") == "singverse" && info.optInt("apiVersion") == 1) { "不是兼容的 SingVerse 服务" }
         serverName = info.optString("name").ifBlank { serverName }.ifBlank { NasAddress.authority(session.base) }
-        pending = session.request("/api/v1/device-authorizations", "POST", JSONObject().put("name", android.os.Build.MODEL.take(60)))
-        check(turn == generation)
-        deadline = SystemClock.elapsedRealtime() + 600000
         return session
-    }
-
-    fun startQr() {
-        if (busy) return
-        cancel(); page = LoginPage.QR; qrRequested = true; loginUsername = ""
-        launch { turn ->
-            val session = prepare(turn)
-            val request = pending ?: return@launch
-            authorizationCode = request.getString("code")
-            qrUrl = NasAddress.approvalUrl(session.base, request.getString("id"), authorizationCode)
-            busy = false
-            poll(session, turn)
-        }
     }
 
     fun submit() {
@@ -137,9 +211,10 @@ internal class TvLogin(context: Context, private val discovery: NasDiscovery, pr
             require(username.isNotBlank() && suppliedPassword.isNotEmpty()) { "请输入账号和密码" }
             val session = prepare(turn); admin = session; loginUsername = username.trim()
             val state = session.adminPost("/api/v1/auth/login", JSONObject().put("username", loginUsername).put("password", suppliedPassword)).getString("state")
+            if (turn != generation) return@launch
             if (state == "mfaRequired") mfaRequired = true else {
                 require(state == "authenticated") { "未知登录状态" }
-                approve(session, turn)
+                connect(session, turn)
             }
         }
     }
@@ -150,35 +225,20 @@ internal class TvLogin(context: Context, private val discovery: NasDiscovery, pr
             require(code.isNotBlank()) { "请输入验证码或恢复码" }
             val session = admin ?: error("登录已过期，请返回重新登录")
             require(session.adminPost("/api/v1/auth/mfa/verify", JSONObject().put("code", code)).optString("state") == "authenticated") { "二次验证失败" }
+            if (turn != generation) return@launch
             mfaRequired = false
-            approve(session, turn)
+            connect(session, turn)
         }
     }
 
-    private suspend fun approve(session: LoginHttp, turn: Int) {
-        try {
-            val request = pending ?: error("设备授权已过期，请重新登录")
-            session.adminPost("/api/v1/admin/device-authorizations/${request.getString("id")}/approve", JSONObject().put("code", request.getString("code")))
+    private suspend fun connect(session: LoginHttp, turn: Int) {
+        val credential = try {
+            session.adminPost("/api/v1/auth/tv-session", JSONObject().put("name", android.os.Build.MODEL.take(60).ifBlank { "SingVerse TV" }))
         } finally { withContext(NonCancellable) { runCatching { session.logout() }; if (admin === session) admin = null } }
-        poll(session, turn)
-    }
-
-    private suspend fun poll(session: LoginHttp, turn: Int) {
-        val request = pending ?: return
-        while (turn == generation) {
-            remaining = ((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0) / 1000).toInt()
-            require(remaining > 0) { "二维码或授权已过期，请重新申请" }
-            val result = session.request("/api/v1/device-authorizations/${request.getString("id")}/poll", "POST", JSONObject().put("pollSecret", request.getString("pollSecret")))
-            if (turn != generation) return
-            when (result.optString("status")) {
-                "DENIED" -> error("管理员拒绝了本次连接，请核对 NAS 后重试")
-                "APPROVED" -> {
-                    busy = true; pending = null; qrUrl = ""; password = ""; mfaCode = ""
-                    authorized(session.base, result.getString("token")); return
-                }
-            }
-            delay(1000)
-        }
+        currentCoroutineContext().ensureActive()
+        if (turn != generation) return
+        password = ""; mfaCode = ""
+        authorized(session.base, credential.getString("token"))
     }
 
     fun clearError() { error = "" }

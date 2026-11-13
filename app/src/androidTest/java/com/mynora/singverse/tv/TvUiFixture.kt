@@ -34,6 +34,8 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
     @Volatile var songCount = 20
     @Volatile var mixedSongMetadata = false
     @Volatile var addDelayMs = 0L
+    @Volatile var rejectTvLogin = false
+    @Volatile var requireLoginMfa = false
     @Volatile var sessionId = "ui-test-session"
     val rejectNextAdd = AtomicInteger()
     val failNextAddResponse = AtomicInteger()
@@ -137,9 +139,19 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
 
 
     @Synchronized private fun response(path: String, body: JSONObject, requestTarget: String): String {
+        if (rejectTvLogin && path.startsWith("/api/v1/tv/")) throw TvFixtureHttpException(401, "连接已失效")
         if (path.endsWith("/commands")) actions.add(body.getString("action"))
         playback?.response(path, body)?.let { return it }
         return when {
+        path == "/api/v1/server-info" -> JSONObject().put("service", "singverse").put("apiVersion", 1).put("name", "UI 验收测试服务").toString()
+        path == "/api/v1/auth/csrf" -> JSONObject().put("token", "test-only-csrf").toString()
+        path == "/api/v1/auth/login" -> JSONObject().put("state", if (requireLoginMfa) "mfaRequired" else "authenticated").toString()
+        path == "/api/v1/auth/mfa/verify" -> {
+            if (body.optString("code") != "123456") throw TvFixtureHttpException(401, "测试：验证码不正确")
+            JSONObject().put("state", "authenticated").toString()
+        }
+        path == "/api/v1/auth/tv-session" -> JSONObject().put("deviceId", "test-only-tv").put("token", "fixture-" + "a".repeat(48)).toString()
+        path == "/api/v1/auth/logout" -> "{}"
         path.endsWith("/invitations") -> JSONObject().put("invitation", token)
             .put("expiresAt", "2099-01-01T00:00:00Z").toString()
         path.endsWith("/participants") -> JSONArray().put(JSONObject().put("id", "test-friend").put("name", "测试亲友").put("revoked", false))

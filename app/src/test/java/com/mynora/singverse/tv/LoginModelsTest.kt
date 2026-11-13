@@ -18,12 +18,6 @@ class LoginModelsTest {
         }
     }
 
-    @Test fun qrContainsApprovalDataWithoutPollCredential() {
-        assertEquals("https://nas.local/admin/#/system/tv-devices?authorization=abc-123&code=012345", NasAddress.approvalUrl("https://nas.local", "abc-123", "012345"))
-        assertThrows(IllegalArgumentException::class.java) { NasAddress.approvalUrl("http://nas", "id&other=1", "012345") }
-        assertThrows(IllegalArgumentException::class.java) { NasAddress.approvalUrl("http://nas", "id", "12345") }
-    }
-
     @Test fun recentServersMoveToFrontDeduplicateAndKeepAtMostTen() {
         val previous = (1..10).map { RecentNas("http://nas$it", "NAS $it", "admin", it.toLong()) }
         val updated = RecentNas("http://nas5", "新名字", "owner", 20L)

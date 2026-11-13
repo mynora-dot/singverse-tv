@@ -31,11 +31,11 @@ internal class TvCredentialCipher(
     fun decrypt(value: String): String {
         val wrapped = value.startsWith(LEGACY_PREFIX)
         val bytes = Base64.decode(value.removePrefix(LEGACY_PREFIX), Base64.NO_WRAP)
-        require(bytes.size >= 12 + 16) { "设备凭证已损坏，请重新授权" }
+        require(bytes.size >= 12 + 16) { "设备凭证已损坏，请重新登录" }
         val key = when {
             wrapped -> legacyKey(create = false)
             Build.VERSION.SDK_INT >= 23 -> ModernKey.get(keyAlias, create = false)
-            else -> error("设备凭证需要重新授权")
+            else -> error("设备凭证需要重新登录")
         }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
@@ -49,7 +49,7 @@ internal class TvCredentialCipher(
             cipher.init(Cipher.ENCRYPT_MODE, legacyKey(create = true), GCMParameterSpec(128, iv))
         } else if (Build.VERSION.SDK_INT >= 23) {
             cipher.init(Cipher.ENCRYPT_MODE, ModernKey.get(keyAlias, create = true))
-        } else error("设备凭证需要重新授权")
+        } else error("设备凭证需要重新登录")
         check(cipher.iv.size == 12)
         val encoded = Base64.encodeToString(cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
         return (if (legacy) LEGACY_PREFIX else "") + encoded
@@ -70,11 +70,11 @@ internal class TvCredentialCipher(
                 SecretKeySpec(bytes, "AES")
             }
             restored.getOrNull()?.let { return it }
-            if (!create) throw IllegalStateException("设备凭证密钥不可用，请重新授权", restored.exceptionOrNull())
-            // Only a new explicit authorization may replace an unusable wrapping key.
+            if (!create) throw IllegalStateException("设备凭证密钥不可用，请重新登录", restored.exceptionOrNull())
+            // Only a new explicit login may replace an unusable wrapping key.
             store.deleteEntry(alias)
         }
-        check(create) { "设备凭证密钥不存在，请重新授权" }
+        check(create) { "设备凭证密钥不存在，请重新登录" }
         if (!store.containsAlias(alias)) {
             val start = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }.time
             val end = Calendar.getInstance().apply { add(Calendar.YEAR, 30) }.time
@@ -96,7 +96,7 @@ internal class TvCredentialCipher(
         fun get(alias: String, create: Boolean): SecretKey {
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             (store.getKey(alias, null) as? SecretKey)?.let { return it }
-            check(create) { "设备凭证密钥不存在，请重新授权" }
+            check(create) { "设备凭证密钥不存在，请重新登录" }
             return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
                 init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                     .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())

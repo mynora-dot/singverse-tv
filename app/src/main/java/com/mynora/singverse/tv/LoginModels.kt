@@ -18,14 +18,12 @@ internal object NasAddress {
 
     fun protocol(value: String) = if (value.startsWith("https://", true)) "https" else "http"
     fun authority(value: String) = value.substringAfter("://", value)
-    fun approvalUrl(base: String, id: String, code: String): String {
-        require(id.matches(Regex("[a-zA-Z0-9-]{1,80}")) && code.matches(Regex("[0-9]{6}"))) { "授权信息无效" }
-        return "${normalize(base)}/admin/#/system/tv-devices?authorization=$id&code=$code"
-    }
 }
 
 internal data class RecentNas(val address: String, val name: String, val username: String, val lastLogin: Long)
 internal fun rememberNas(previous: List<RecentNas>, next: RecentNas): List<RecentNas> =
     (listOf(next) + previous.filterNot { it.address == next.address }).take(10)
 
-internal enum class LoginPage { METHODS, MANUAL, DISCOVERY, QR, HISTORY }
+internal enum class LoginPage { QR, METHODS, MANUAL, DISCOVERY, HISTORY }
+
+internal enum class PairingStage { STARTING, WAITING, SCANNED, CONNECTING, CONNECTED, EXPIRED, OFFLINE, FAILED }

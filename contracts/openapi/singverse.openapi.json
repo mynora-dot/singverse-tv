@@ -9276,90 +9276,25 @@
         "parameters": []
       }
     },
-    "/api/v1/device-authorizations": {
+    "/api/v1/auth/tv-session": {
       "post": {
         "tags": [
           "TV and party"
         ],
-        "summary": "Request ten-minute device grant",
-        "operationId": "tv_post_device_authorizations",
-        "security": [],
+        "summary": "Create a TV session after account login",
+        "operationId": "tv_create_account_session",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TvAuthorization"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "401": {
-            "description": "Credential missing, expired or revoked"
-          },
-          "403": {
-            "description": "Not authorized for this device, party or action"
-          },
-          "409": {
-            "description": "Revision conflict or state does not allow operation"
-          }
-        },
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 60
-                  }
-                },
-                "required": [
-                  "name"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/device-authorizations/{id}/poll": {
-      "post": {
-        "tags": [
-          "TV and party"
-        ],
-        "summary": "Poll grant; approved responses repeat the same device credential",
-        "operationId": "tv_post_device_authorizations_id_poll",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string"
-                    },
-                    "deviceId": {
-                      "type": "string"
-                    },
-                    "token": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "status"
-                  ]
+                  "$ref": "#/components/schemas/TvSessionCredential"
                 }
               }
             }
@@ -9379,8 +9314,8 @@
         },
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
+            "name": "X-CSRF-Token",
+            "in": "header",
             "required": true,
             "schema": {
               "type": "string"
@@ -9394,17 +9329,20 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "pollSecret": {
-                    "type": "string"
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
                   }
                 },
                 "required": [
-                  "pollSecret"
+                  "name"
                 ]
               }
             }
           }
-        }
+        },
+        "description": "Requires a completed account login via /api/v1/auth/login and /api/v1/auth/mfa/verify when MFA is enabled. Submit name using the temporary administrator Cookie and X-CSRF-Token; returns an independent TV-only bearer token immediately. Log out the temporary account session after receiving it. No authorization code, approval or polling is used. Existing TV credentials remain valid."
       }
     },
     "/api/v1/admin/overview": {
@@ -9555,24 +9493,6 @@
                         "metadataBatch",
                         "classification",
                         "missingFeedbackPending"
-                      ]
-                    },
-                    "tv": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
-                      "properties": {
-                        "activeDevices": {
-                          "type": "integer"
-                        },
-                        "pending": {
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "activeDevices",
-                        "pending"
                       ]
                     },
                     "tasks": {
@@ -9748,7 +9668,6 @@
                     "library",
                     "sources",
                     "review",
-                    "tv",
                     "tasks",
                     "recentSongs",
                     "playback30d",
@@ -9805,129 +9724,6 @@
         },
         "description": "Requires existing administrator Cookie session. Device and participant bearer tokens are rejected. Read-only aggregation of index counts and small row reads; each section is bounded by its own timeout and never streams a full-table search. Response is always no-store.",
         "parameters": []
-      }
-    },
-    "/api/v1/admin/tv-devices": {
-      "get": {
-        "tags": [
-          "TV and party"
-        ],
-        "summary": "List device grants and pending requests",
-        "operationId": "tv_get_admin_tv_devices",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "devices": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    },
-                    "pending": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    }
-                  },
-                  "required": []
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "401": {
-            "description": "Credential missing, expired or revoked"
-          },
-          "403": {
-            "description": "Not authorized for this device, party or action"
-          },
-          "409": {
-            "description": "Revision conflict or state does not allow operation"
-          }
-        },
-        "description": "Requires existing administrator Cookie session; writes require X-CSRF-Token. Device and participant bearer tokens are rejected.",
-        "parameters": []
-      }
-    },
-    "/api/v1/admin/device-authorizations/{id}/approve": {
-      "post": {
-        "tags": [
-          "TV and party"
-        ],
-        "summary": "Approve verified TV code",
-        "operationId": "tv_post_admin_device_authorizations_id_approve",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input"
-          },
-          "401": {
-            "description": "Credential missing, expired or revoked"
-          },
-          "403": {
-            "description": "Not authorized for this device, party or action"
-          },
-          "409": {
-            "description": "Revision conflict or state does not allow operation"
-          }
-        },
-        "description": "Requires existing administrator Cookie session; writes require X-CSRF-Token. Device and participant bearer tokens are rejected.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^[0-9]{6}$"
-                  }
-                },
-                "required": [
-                  "code"
-                ]
-              }
-            }
-          }
-        }
       }
     },
     "/api/v1/admin/tv-devices/{id}": {
@@ -11370,44 +11166,6 @@
           },
           "404": {
             "description": "No applied cover"
-          }
-        }
-      }
-    },
-    "/api/v1/admin/device-authorizations/{id}": {
-      "delete": {
-        "operationId": "tv_deny_authorization",
-        "tags": [
-          "TV and party"
-        ],
-        "summary": "Administrator rejects pending television grant",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Rejected; no response body"
-          },
-          "401": {
-            "description": "Administrator required"
-          },
-          "403": {
-            "description": "CSRF rejected"
-          },
-          "409": {
-            "description": "Already processed"
           }
         }
       }
@@ -16402,18 +16160,19 @@
           {
             "name": "state",
             "in": "query",
-            "description": "Empty for all songs. Category values match the row category; FAILED means a separation job for the current media failed; UNCONFIRMED means two source audio streams without confirmed roles.",
+            "description": "UNRECOGNIZED selects unprobed media and unconfirmed dual audio tracks, including prior failed or uncertain recognition. Confirmed role assignments and active recognition jobs are retained.",
             "schema": {
               "type": "string",
               "enum": [
                 "",
-                "UNPROBED",
-                "ELIGIBLE",
                 "READY",
                 "PROCESSING",
+                "UNPROBED",
+                "ELIGIBLE",
                 "INAPPLICABLE",
                 "FAILED",
-                "UNCONFIRMED"
+                "UNCONFIRMED",
+                "UNRECOGNIZED"
               ]
             }
           },
@@ -16512,6 +16271,21 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Omit for all batches; RECOGNIZE combines FAST and ANALYZE. Filter applies before pagination.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "",
+                "SEPARATE",
+                "FAST",
+                "ANALYZE",
+                "RECOGNIZE"
+              ]
+            }
           }
         ]
       }
@@ -16575,7 +16349,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Prepare SEPARATE generation or FAST/ANALYZE recognition using explicit songs or all filtered results. Recognition probes unknown streams, processes only unconfirmed dual audio tracks, and preserves confirmed marks. Jobs continue in the background; inconclusive results become REVIEW."
       }
     },
     "/api/v1/audio-processing/batches/{id}": {
@@ -16747,7 +16522,7 @@
     },
     "/api/v1/audio-processing/batches/{id}/retry": {
       "post": {
-        "summary": "Create a new preview of failed items",
+        "summary": "Create a new preview of failed or inconclusive items",
         "operationId": "audioProcessingPostBatchesIdRetry",
         "security": [
           {
@@ -16814,12 +16589,22 @@
                 "properties": {
                   "backend": {
                     "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "SEPARATE",
+                      "FAST",
+                      "ANALYZE"
+                    ],
+                    "description": "Optional. Defaults to the previous kind; only recognition batches can change mode between FAST and ANALYZE."
                   }
                 }
               }
             }
           }
-        }
+        },
+        "description": "Includes FAILED and REVIEW members, rechecking current media and role state. kind defaults to the previous batch kind; recognition can switch between FAST and ANALYZE. Changing between generation and recognition is rejected."
       }
     },
     "/api/v1/audio-processing/batches/{id}/items/{song}/cancel": {
@@ -24865,6 +24650,98 @@
           }
         }
       }
+    },
+    "/api/v1/auth/password/reset": {
+      "post": {
+        "operationId": "postAuthPasswordReset",
+        "summary": "Reset the administrator password using a host-issued one-use code.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success (empty body)"
+          },
+          "400": {
+            "description": "Invalid request or deployment origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed or expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or CSRF rejected",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Security setup state conflicts",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until retry"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Fetch /auth/csrf again after any login phase or cookie transition."
+          }
+        ],
+        "description": "Requires the same-origin CSRF boundary and rate limits. The deployment-host CLI requires an interactive TTY and exclusive deployment lock; no HTTP endpoint issues codes. Replaces only the password, retains the current username, enrolled MFA and remaining MFA recovery codes, and revokes all sessions, challenges and reset codes atomically. Success clears cookies and does not log in automatically.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordReset"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -24946,6 +24823,11 @@
           "password": {
             "type": "string",
             "maxLength": 256
+          },
+          "autoLogin": {
+            "type": "boolean",
+            "default": false,
+            "description": "Keep the fully authenticated session for 30 days with a persistent HttpOnly cookie. MFA is still required when enabled; the choice is bound to the server-side challenge. When omitted/false, the existing 30-minute idle and 8-hour absolute limits apply."
           }
         }
       },
@@ -26411,20 +26293,20 @@
             "type": "number",
             "minimum": 0.8,
             "maximum": 1,
-            "default": 0.95
+            "default": 0.8
           },
           "minIntervalSeconds": {
             "type": "integer",
             "minimum": 0,
             "maximum": 300,
-            "default": 3,
+            "default": 1,
             "description": "Batch delay range in seconds after each song. Maximum must be >= minimum; omitted fields use defaults."
           },
           "maxIntervalSeconds": {
             "type": "integer",
             "minimum": 0,
             "maximum": 300,
-            "default": 8,
+            "default": 2,
             "description": "Batch delay range in seconds after each song. Maximum must be >= minimum; omitted fields use defaults."
           }
         },
@@ -28884,37 +28766,6 @@
           "totalElements"
         ]
       },
-      "TvAuthorization": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "pollSecret": {
-            "type": "string"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "pollSecret",
-          "expiresAt",
-          "status"
-        ]
-      },
       "ArtistProfile": {
         "type": "object",
         "required": [
@@ -30003,6 +29854,18 @@
           "error": {
             "type": "string"
           },
+          "cleanupState": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "RELEASED"
+            ],
+            "description": "Temporary compute input/sample cleanup lifecycle, independent of task and analysis outcomes. PENDING is retried without re-running media analysis or applying roles again. Optional for older nodes."
+          },
+          "cleanupError": {
+            "type": "string",
+            "description": "Bounded temporary cleanup failure message; empty after release. No temporary paths are exposed."
+          },
           "resultState": {
             "type": "string",
             "description": "Analysis outcome (CONFIDENT or UNKNOWN), separate from task execution state. Empty for legacy results without an outcome."
@@ -30142,6 +30005,32 @@
             "items": {
               "$ref": "#/components/schemas/AudioVersion"
             }
+          },
+          "originalSelection": {
+            "type": "object",
+            "description": "For guaranteed single-audio song formats before probing. Select the unique/default audio source; no stream index has been observed. Never fabricate stream:0.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "UNIQUE_AUDIO"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "reuseBasis": {
+            "enum": [
+              "PATH_ONLY",
+              "PATH_AND_SIZE"
+            ],
+            "description": "Receiver directory verification authorizing original, unmodified package audio reuse. This is not receiver probing or a media content hash."
+          },
+          "receiverProbed": {
+            "type": "boolean",
+            "description": "False for adopted package declarations and unprobed unique-audio song selection."
           }
         },
         "required": [
@@ -30185,7 +30074,19 @@
             "type": "string"
           },
           "state": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "",
+              "READY",
+              "PROCESSING",
+              "UNPROBED",
+              "ELIGIBLE",
+              "INAPPLICABLE",
+              "FAILED",
+              "UNCONFIRMED",
+              "UNRECOGNIZED"
+            ],
+            "description": "UNRECOGNIZED selects unprobed media and unconfirmed dual audio tracks, including prior failed or uncertain recognition. Confirmed role assignments and active recognition jobs are retained."
           },
           "songId": {
             "type": "string"
@@ -30257,9 +30158,19 @@
               "flac"
             ],
             "default": "aac"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "SEPARATE",
+              "FAST",
+              "ANALYZE"
+            ],
+            "default": "SEPARATE",
+            "description": "SEPARATE generates accompaniment. FAST and ANALYZE retry role recognition on existing dual audio tracks, probing unknown streams first; confirmed roles are preserved. Recognition batches use the default legacy recipe; FAST ignores the requested backend."
           }
         },
-        "description": "Selection captures one published audio catalog generation. Media fingerprints are rechecked as each chunk is persisted; changed or deleted media becomes a failed member."
+        "description": "Selection captures one published audio catalog generation. Media fingerprints are rechecked as each chunk is persisted; changed or deleted media becomes a failed member. kind defaults to SEPARATE for existing clients; FAST and ANALYZE identify original/accompaniment roles without generating an accompaniment version."
       },
       "AudioProcessingBatch": {
         "type": "object",
@@ -30291,13 +30202,15 @@
             "type": "object",
             "additionalProperties": {
               "type": "integer"
-            }
+            },
+            "description": "Counts by member state, including REVIEW for completed recognition that could not safely save role assignments. Only SUCCEEDED means roles were confirmed or an accompaniment was generated."
           },
           "categories": {
             "type": "object",
             "additionalProperties": {
               "type": "integer"
-            }
+            },
+            "description": "Recognition preview categories are UNPROBED, UNCONFIRMED, READY, PROCESSING, and INAPPLICABLE. Only unknown streams and unconfirmed dual tracks are candidates; confirmed marks are preserved."
           },
           "items": {
             "type": "array",
@@ -30320,7 +30233,18 @@
                   "type": "string"
                 },
                 "state": {
-                  "type": "string"
+                  "type": "string",
+                  "enum": [
+                    "PENDING",
+                    "PROBING",
+                    "PROCESSING",
+                    "SUCCEEDED",
+                    "REVIEW",
+                    "SKIPPED",
+                    "FAILED",
+                    "CANCELLED"
+                  ],
+                  "description": "REVIEW is terminal and means recognition finished without reliable original/accompaniment assignments. Manual confirmation or a new recognition batch is required."
                 },
                 "job_id": {
                   "type": [
@@ -30430,6 +30354,15 @@
           "preview": {
             "type": "boolean",
             "default": false
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "SEPARATE",
+              "FAST",
+              "ANALYZE"
+            ],
+            "description": "The persisted batch purpose. Existing batches migrate to SEPARATE."
           }
         },
         "required": [
@@ -30440,7 +30373,8 @@
           "categories",
           "prepared",
           "selectionTotal",
-          "error"
+          "error",
+          "kind"
         ]
       },
       "AudioProcessingSong": {
@@ -30681,9 +30615,9 @@
           "maxBytes": {
             "type": "integer",
             "format": "int64",
-            "minimum": 67108864,
+            "minimum": 0,
             "maximum": 1125899906842624,
-            "description": "Persistent Java-server song-cache budget in bytes. Initialized to 10 GiB unless configured otherwise. Active leases are protected; shrinking may remain over budget until they finish."
+            "description": "Go-server song-cache budget in bytes. Until settings are explicitly saved (revision=0), startup uses the configured budget (default 50 GiB), or 80% of available space on the cache filesystem if that budget will not fit. Automatic sizing may yield less than 64 MiB, including zero on a full disk; manual saves require 64 MiB to 1 PiB. Explicitly saved settings survive restarts. Active leases remain protected when shrinking."
           },
           "policy": {
             "type": "string",
@@ -33621,6 +33555,11 @@
             "type": "integer",
             "minimum": 0
           },
+          "pathOnlyCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Subset of presentCount whose path exists but package or directory size is unknown; these are not size matches."
+          },
           "missingCount": {
             "type": "integer",
             "minimum": 0
@@ -33690,6 +33629,30 @@
               "null"
             ]
           },
+          "inputState": {
+            "type": "string",
+            "enum": [
+              "RETAINED",
+              "PENDING",
+              "RELEASED"
+            ],
+            "description": "Uploaded ZIP lifecycle, independent of business state. Retained while parsing, previewing or applying; released once entries, assets and baseline are durable. Verification and retry use stored records."
+          },
+          "inputCleanupError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Retryable ZIP cleanup failure; does not fail or replay the import."
+          },
+          "inputCleanupAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Earliest next automatic ZIP cleanup attempt after a cleanup failure."
+          },
           "samples": {
             "type": "array",
             "maxItems": 5,
@@ -33704,6 +33667,31 @@
                 },
                 "mediaURL": {
                   "type": "string"
+                },
+                "verification": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "PRESENT",
+                    "MISSING",
+                    "MISMATCH",
+                    "UNREACHABLE",
+                    null
+                  ]
+                },
+                "verificationLevel": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "PATH_ONLY",
+                    "PATH_AND_SIZE",
+                    null
+                  ],
+                  "description": "PRESENT evidence strength; null for pending or unsuccessful verification. PATH_ONLY never implies matching size."
                 },
                 "local": {
                   "type": "object",
@@ -33763,7 +33751,7 @@
             "type": "string"
           }
         },
-        "description": "Durable uploaded metadata workflow. No binding digest or credentials are returned. Latest may be an empty object. Samples are constructed from recipient source root; they never use sender addresses."
+        "description": "Durable uploaded metadata workflow. No binding digest or credentials are returned. Latest may be an empty object. Samples are constructed from recipient source root; they never use sender addresses. One verification run lists each parent directory once and saves every item outcome; explicit retry revisits failed items, or all items after source credentials change. PRESENT includes path-only observations; consult pathOnlyCount and verificationLevel for size evidence. ZIP cleanup is independent and preserves all durable import records."
       },
       "SourceIngestTask": {
         "type": "object",
@@ -34342,6 +34330,50 @@
               }
             }
           }
+        ]
+      },
+      "PasswordReset": {
+        "type": "object",
+        "required": [
+          "username",
+          "resetToken",
+          "newPassword"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "resetToken": {
+            "type": "string",
+            "minLength": 43,
+            "maxLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "writeOnly": true,
+            "description": "Single-use code issued interactively on the deployment host using --issue-password-reset. Valid for 15 minutes; only its SHA-256 digest is stored."
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 15,
+            "maxLength": 128,
+            "writeOnly": true
+          }
+        }
+      },
+      "TvSessionCredential": {
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "Independent TV bearer credential. Stored only as a SHA-256 digest on the server."
+          }
+        },
+        "required": [
+          "deviceId",
+          "token"
         ]
       }
     }

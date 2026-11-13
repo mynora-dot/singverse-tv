@@ -35,7 +35,7 @@ class TvClient(context: Context) {
         val encrypted = withContext(Dispatchers.IO) { credentialCipher.encrypt(credential) }
         currentCoroutineContext().ensureActive()
         synchronized(this) {
-            check(generation == connectionGeneration) { "NAS 连接已更换，请重新授权" }
+            check(generation == connectionGeneration) { "NAS 连接已更换，请重新登录" }
             if (base != uri.toString()) covers.evictAll()
             connectionGeneration++
             base = uri.toString(); token = credential

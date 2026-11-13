@@ -402,7 +402,7 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     }
 }
 
-@Composable internal fun Qr(value: String, modifier: Modifier = Modifier.size(190.dp)) {
+@Composable internal fun Qr(value: String, modifier: Modifier = Modifier.size(190.dp), description: String = "本场邀请二维码") {
     BoxWithConstraints(modifier.background(Color.White)) {
         val size = minOf(constraints.maxWidth, constraints.maxHeight).coerceAtLeast(1)
         val bitmap = remember(value, size) { runCatching {
@@ -411,7 +411,7 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                 for (x in 0 until matrix.width) for (y in 0 until matrix.height) setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
             }
         }.getOrNull() }
-        if (bitmap != null) Image(bitmap.asImageBitmap(), "本场邀请二维码", Modifier.fillMaxSize(), filterQuality = FilterQuality.None)
+        if (bitmap != null) Image(bitmap.asImageBitmap(), description, Modifier.fillMaxSize(), filterQuality = FilterQuality.None)
     }
 }
 

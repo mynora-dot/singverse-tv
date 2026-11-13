@@ -41,7 +41,7 @@ import org.json.*
 import java.net.URLEncoder
 import java.util.UUID
 
-class TvApp(context: android.content.Context) {
+class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_000) {
     val client = TvClient(context)
     val discovery = NasDiscovery(context)
     private val updater = TvUpdater(context, client)
@@ -290,8 +290,12 @@ class TvApp(context: android.content.Context) {
     val invitationError: String get() = partyInvitation.error
     var address by mutableStateOf(client.base)
     var query by mutableStateOf("")
-    internal val login: TvLogin = TvLogin(context, discovery) { base, credential ->
-        stopLocal(); loadedAttempt = ""; resetUpdates(); client.save(base, credential); address = base; establishConnection()
+    internal val login: TvLogin = TvLogin(context, discovery, pairingLifetimeMillis) { base, credential ->
+        stopLocal(); loadedAttempt = ""; resetUpdates(); client.save(base, credential); address = base
+        try { establishConnection() } catch (failure: Exception) {
+            if (!connected && client.token == credential) client.clear()
+            throw failure
+        }
     }.also { if (client.base.isNotBlank()) it.setAddress(client.base) }
     var selectedTags by mutableStateOf(setOf<String>())
     var unclassified by mutableStateOf(false)
@@ -584,8 +588,33 @@ class TvApp(context: android.content.Context) {
         if(client.base!=server || client.token!=credential)throw CancellationException("连接已更换")
         return result
     }
-    fun connect() = run { establishConnection() }
-    private suspend fun establishConnection() { val info = json("/api/v1/server-info"); require(info.optString("service") == "singverse" && info.optInt("apiVersion") == 1) { "不是兼容的 SingVerse 服务" }; acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession=true); if (!connected) { acceptSnapshot(json("/api/v1/tv/sessions/${snapshot.getString("id")}/recover", "POST")); page = "首页" }; connected = true; online = true; failureCount = 0; error = ""; checkUpdate(manual = false, connection = true); ensureInvitation(); loadHome(); login.recordSuccess(client.base, serverName); loadSongs(); loadTags() }
+    fun connect() = run {
+        val previous = client.credentials()
+        try { establishConnection() }
+        catch (failure: TvHttpException) {
+            if (failure.status == 401 && !connected && client.credentials() == previous) {
+                client.clear()
+                error = ""
+                login.open(LoginPage.METHODS)
+            } else throw failure
+        }
+    }
+    private suspend fun establishConnection() {
+        val info = json("/api/v1/server-info")
+        require(info.optString("service") == "singverse" && info.optInt("apiVersion") == 1) { "不是兼容的 SingVerse 服务" }
+        acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession = true)
+        if (!connected) {
+            acceptSnapshot(json("/api/v1/tv/sessions/${snapshot.getString("id")}/recover", "POST"))
+            page = "首页"
+        }
+        // Finish the required handshake before removing the login screen and its lifecycle.
+        loadHome()
+        login.recordSuccess(client.base, serverName)
+        connected = true; online = true; failureCount = 0; error = ""
+        checkUpdate(manual = false, connection = true)
+        ensureInvitation()
+        run { loadSongs(); loadTags() }
+    }
     suspend fun refresh() { try { val sid = snapshot.optString("id"); if (sid.isEmpty()) return; acceptSnapshot(json("/api/v1/tv/sessions/$sid/snapshot")); if(error.startsWith("与 NAS 同步失败"))error=""; val restored = !online; online = true; if (restored && foreground) checkUpdate(manual = false, connection = true); failureCount = 0; lastSync = android.os.SystemClock.elapsedRealtime(); if (foreground) { executeCommands(); ensureInvitation(); if (!participantsKnown || lastSync - lastParticipantsRefresh >= 5000) refreshParticipants(sid) }
         if (foreground && android.os.SystemClock.elapsedRealtime() - lastLibraryRefresh > 30000) {
             if (page == "首页") loadHome()
@@ -605,7 +634,7 @@ class TvApp(context: android.content.Context) {
                 }
             }
             lastLibraryRefresh = android.os.SystemClock.elapsedRealtime()
-        } } catch (e: Exception) { if (e is CancellationException) throw e; online = false; participantsKnown = false; failureCount++; if (e is TvHttpException && e.status == 401) { pauseLocal(); resetUpdates(); client.clear(); connected = false; clearPartyConnection(); login.cancel() }; error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}" } }
+        } } catch (e: Exception) { if (e is CancellationException) throw e; online = false; participantsKnown = false; failureCount++; if (e is TvHttpException && e.status == 401) { pauseLocal(); resetUpdates(); client.clear(); connected = false; clearPartyConnection(); login.open(LoginPage.METHODS); error = "" } else error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}" } }
     private suspend fun refreshParticipants(sid: String) {
         val generation = ++participantsGeneration
         val server = client.base; val credential = client.token
@@ -962,7 +991,7 @@ class TvApp(context: android.content.Context) {
         }
     }
     fun foreground() { foreground = true;playbackOptions.refreshRoutes();resumeUpdateInstallation();if(connected){reconnect();checkUpdate(manual = false)} }
-    fun background() { playbackLifecycleGeneration++; foreground = false; pauseLocal() }
+    fun background() { playbackLifecycleGeneration++; foreground = false; login.pausePairing(); pauseLocal() }
     fun pauseLocal() { resumeAfterPreparation = false; player.pause(); report() }
     fun stopLocal() {
         playbackLifecycleGeneration++; resourceGeneration++; audioRoleGeneration++

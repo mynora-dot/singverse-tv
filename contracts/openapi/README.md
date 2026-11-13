@@ -2,6 +2,8 @@
 
 首批业务 API 为单管理员账号、会话和 MFA，见 [singverse.openapi.json](singverse.openapi.json)（OpenAPI 3.1）。客户端与Go 服务端遵循同一接口；后续仅为真实功能扩充契约。
 
+网页登录新增浏览器密码管理、可选 30 天自动登录（`Login.autoLogin`）和部署主机一次性重置码改密（`POST /api/v1/auth/password/reset`）。旧登录字段保持兼容，普通会话期限不变；完整流程与失效规则见[登录与密码重置](../auth-login.md)。
+
 - 路径版本：未来业务接口以 `/api/v1` 开始。破坏性变化使用新主版本；增加可选字段一般保持当前版本。
 - JSON 字段统一 lower camelCase；不暴露 Go 类名、Entity、堆栈或语言专属对象。
 - 错误采用 RFC 9457 Problem Details，媒体类型 `application/problem+json`，使用标准 `type`、`title`、`status`、`detail`、`instance` 字段。具体业务错误标识在真实接口出现时定义，不向客户端泄露凭据和内部实现。
@@ -104,7 +106,7 @@ WebDAV 使用保存的地址和加密凭据在服务端发起 GET/HEAD，转发 
 
 ## TV 与亲友聚会
 
-新增 TV/party 契约见 `singverse.openapi.json` 与 [TV 工程](https://github.com/mynora-dot/singverse-tv/blob/main/README.md)。`/server-info` 提供稳定实例身份；电视先申请十分钟授权，管理员在 `/admin/#/system/tv-devices` 核对短码并批准。轮询秘密换取独立设备 token，重复领取返回同一凭据，数据库只存摘要。设备 token 不授予管理员权限；撤销设备后媒体及关联聚会访问立即失效。
+新增 TV/party 契约见 `singverse.openapi.json` 与 [TV 工程](https://github.com/mynora-dot/singverse-tv/blob/main/README.md)。`/server-info` 提供稳定实例身份。电视输入 NAS 地址及账号密码，通过现有 `/auth/login`（启用 MFA 时继续 `/auth/mfa/verify`）完成认证，再使用临时管理员 Cookie 和 CSRF 调用 `POST /api/v1/auth/tv-session`，提交 `{name}` 直接取得 `{deviceId,token}`，随后注销临时管理员会话。数据库只保存独立电视 token 的摘要；该 token 仅用于曲库和聚会，不授予管理员权限。电视授权码、申请、审批、轮询和网页端电视连接页已移除；已有电视凭据保持可用。
 
 `/tv/**` 和 `/party/**` 只接受 Authorization Bearer，不接受管理员 Cookie。这两个独立命名空间不使用 CSRF；管理端继续 Cookie + CSRF。亲友邀请预览使用 POST 读取以避免令牌进入 URL 访问日志，预览不加入；显式 join 获得十二小时参与凭据，昵称不决定权限。邀请有效一小时，刷新使旧邀请失效，散场失效全部参与授权。
 
@@ -146,7 +148,7 @@ TV 非转码增强新增设备专用 text-tracks 与 releases/current、releases
 
 ## 全曲库音轨角色与离线分离
 
-新增管理员 `/media-songs/{song}/audio-roles` GET/PUT、`/audio-jobs` POST、`/audio-jobs/{id}/cancel` POST 和独立伴奏 GET/HEAD。角色包含 state、origin、revision、originalId、backingId；纠正只接受两条本地探测存在的源音轨，旧 revision 返回 409，素材指纹变化使旧角色/伴奏失效。亲友及 TV 的 `/api/v1/{party|tv}/audio-roles/songs/{song}` GET/PUT 使用活跃聚会 Bearer，全员可纠正，分离仍限管理员。管理员 POST/PUT 沿用 CSRF。
+新增管理员 `/media-songs/{song}/audio-roles` GET/PUT、`/audio-jobs` POST、`/audio-jobs/{id}/cancel` POST 和独立伴奏 GET/HEAD。角色包含 state、origin、revision、originalId、backingId；纠正只接受两条本地探测或已核验资料包声明中存在的源音轨，旧 revision 返回 409，素材指纹变化使旧角色/伴奏失效。亲友及 TV 的 `/api/v1/{party|tv}/audio-roles/songs/{song}` GET/PUT 使用活跃聚会 Bearer，全员可纠正，分离仍限管理员。管理员 POST/PUT 沿用 CSRF。
 
 播放 `PlaybackOptions.audioRole` 按共享角色选用；`PlaybackResource.audioRoles` 为首次协商快照，`backingUrl` 为 Go 授权的独立伴奏，客户端合并时保留视频原时间轴并处理 offset。`/api/v1/internal/audio-input/{id}` 只允许关联计算节点凭据读取 RUNNING 任务的当前素材。
 
@@ -169,7 +171,7 @@ Go 服务内嵌8张音乐主题默认封面，无需外部图片服务。首次�
 
 管理员 `GET /api/v1/transcoding/cache` 按 `page`（默认0，上限1000000）、`size`（默认20，上限100）分页查看 Go 服务节点完整成功的实时 HLS 与已发布完整块的 WebDAV 原片缓存，按 `lastAccessAt` 倒序和 ID 升序。返回设置、Go 缓存目录实际用量、缓存条目总数，以及包含缓存 ID、可用歌曲名称/歌手、音频/视频类型（`mediaType=VIDEO|AUDIO`）、已缓存大小、生成/访问时间、复用次数、租约状态和输出参数的条目；不暴露来源路径与节点凭据。`target.mode=ORIGINAL` 的条目还含 `cachedBytes/sourceBytes/complete`；部分原片不会标为整曲完成，缺失范围仍受权回源。可选 `residueBytes` 表示损坏或待清理文件的实际磁盘占用，计入总 `usageBytes`，但不计入有效 `bytes/cachedBytes` 或完整度。实际用量可包含接收中的临时文件；列表不包含独立保存的离线兼容成品。
 
-`PUT /api/v1/transcoding/cache/settings` 保存共用容量（整数 bytes，64MiB–1PiB）、`HYBRID|MANUAL`、兼容字段 `ttlHours` 和 `revision`；可选整数百分比 `highWatermarkPercent/lowWatermarkPercent` 默认 90/75，要求 `1≤low<high≤100`。旧四字段请求仍有效，省略水位保留已存值，未知字段返回400、旧修订返回409。已有 LRU/LFU/TTL 自动迁移为 HYBRID 并增加修订，旧策略写入作为 HYBRID 别名兼容；MANUAL 保留，`ttlHours` 仅保留往返兼容，不再控制到期删除。部署容量只负责首次初始化，后续以数据库设置为准；磁盘最低保留空间仍独立生效。
+`PUT /api/v1/transcoding/cache/settings` 保存共用容量（整数 bytes，64MiB–1PiB）、`HYBRID|MANUAL`、兼容字段 `ttlHours` 和 `revision`；可选整数百分比 `highWatermarkPercent/lowWatermarkPercent` 默认 90/75，要求 `1≤low<high≤100`。旧四字段请求仍有效，省略水位保留已存值，未知字段返回400、旧修订返回409。已有 LRU/LFU/TTL 自动迁移为 HYBRID 并增加修订，旧策略写入作为 HYBRID 别名兼容；MANUAL 保留，`ttlHours` 仅保留往返兼容，不再控制到期删除。部署默认预算为 50 GiB；未手动保存设置（revision=0）时，每次启动按缓存目录所在磁盘的可用空间检测，不足预算则使用剩余空间的 80%。自动预算可能低于手动设置的 64 MiB 下限，磁盘满时为 0；管理员保存后以数据库设置为准。磁盘最低保留空间仍独立生效。
 
 混合分数为 `S=0.4H+0.4R+0.2F`：H 每次有效播放增加0.05并限幅至1后按14天半衰期衰减；普通递增事件以O(1)聚合，晚到有效事件仅对同歌按发生时间顺序重折叠以保留限幅语义。R 从最近实际播放活动起按7天半衰期衰减，`F=min(1,ln(1+近7×24h有效次数)/ln(21))`。只有单次实例达到30秒真实播放或短曲完整结束才增加一次 H/F；管理员试听只更新活动保护与 R，不计热门。预取、Range、下载、定位和租约续期不增加热度。3天软保留通过可衰减加分进入 `priority`，不是不可回收的硬保护。生命周期 HOT 为近7天且至少3次有效播放，WARM 为未满30天，COLD 为30–60天，EVICT 为60天及以上；未播放条目以创建时间分层。列表增加 `H/R/F/score/priority/lifecycle/playCount7d/lastPlayedAt`、`pinned/pinRevision/protectionReasons` 和 `state=ACTIVE|DELETING`，可选 `usageReady/statisticsReady/committedBytes/reservedBytes/cleanupGeneration` 区分准备中和真实零值。
 
@@ -201,6 +203,16 @@ Go 服务内嵌8张音乐主题默认封面，无需外部图片服务。首次�
 
 已删除只返回 410 的旧歌手创建、编辑、绑定和 credits 接口。自动歌手库、图片管理、分类及歌曲歌手订正仍使用现有实际接口。旧 `ComputeNodeClient` 及未注册的路径标签接口已删除；连接和回源验证覆盖真实 `ComputeNodeProbe` 链路。
 
+## 批量重新识别原唱与伴奏
+
+`POST /api/v1/audio-processing/batches/preview` 新增 `kind=SEPARATE|FAST|ANALYZE`，省略仍为伴奏生成。FAST 快速识别、ANALYZE 深度识别复用既有音轨处理链路，支持显式勾选和全部筛选结果快照。`state=UNRECOGNIZED` 筛选音轨未探测或双音轨尚未确认的歌曲，包括首次扫描识别失败及结果不确定的歌曲；快速识别不要求伴奏分离环境，仅需节点的 `audio-role-fast` 能力，深度识别沿用已就绪的分离环境。
+
+识别批次先探测未知音轨，仅对未确认的双音轨区分原唱和伴奏。已有确认标记保留；单音轨（包括双声道）、无音轨或多于两条音轨会跳过，不生成新的伴奏文件。后台逐首处理，继续校验媒体指纹；可靠结果自动保存并计 `SUCCEEDED`，不确定结果计终态 `REVIEW`（待人工确认），不冒充成功。可通过现有接口取消整批或单首；已保存的标记保留。
+
+批次列表支持 `kind=SEPARATE|FAST|ANALYZE|RECOGNIZE`，省略返回全部，RECOGNIZE 合并两种识别方式，筛选在分页前生效。重试接口包括 FAILED 和 REVIEW，识别批次可传 `kind=ANALYZE` 改用深度识别，不能将生成批次改为识别。任务中心沿用 AUDIO_BATCH 类型并跳转到对应的识别任务页。所有写入仍需管理员 Cookie、同源与 CSRF；数据库通过新增迁移保留旧批次，计算节点不直接写业务数据库。
+
+音轨校验同时兼容扫描保留的 FFprobe 原始字段（`codec_type/codec_name/index`）和计算节点的结构化字段（`kind/codec/id`），按来源音轨标识、序号、编码、声道、语言、标题及时间线核验。完整视频观测继续保留。启动时由 Go 在核验当前媒体指纹和已确认标记后修复历史误标为 REVIEW 的可靠识别回执；手动订正、清除和真正不确定的结果不改成识别成功。
+
 ## 后台任务中心
 
 管理员只读 `GET /api/v1/background-tasks`、`/{id}`、`/{id}/children`、`/{id}/items` 查询 Go 持久化快照，复用 Cookie 会话；不触发计算节点或媒体源请求。列表默认 `view=ACTIVE`，支持 `HISTORY/ALL`、类型、状态、名称/编号搜索和 0 起始分页（默认 20、最大 100）。首页只列操作批次，按运行、取消、排队、暂停、等待开始、终态在分页前排序；关键词匹配关联歌曲和子任务，按批次去重。详情分开返回批次状态与 operation 原业务阶段；children 支持类型/状态筛选并运行优先，detailMode 指示使用 children 或已有 items，避免重复。扫描后探测到快速识别的范围全部结束才结算整批；单曲是含一项的批次。明细按原状态筛选，counts 返回未筛选的统计。整批终态保留 30 天，未完成及有效批次引用的共享任务持续保留。未知分母的百分比为 null，缺失的历史时间为 null，帧计数只代表当前阶段。详情包含业务页入口与关联有效性；所有返回字段均为展示白名单。schema 为 `BackgroundTask*`，完整行为见[后台任务中心](../../contracts/background-tasks.md)。
@@ -226,6 +238,8 @@ Nginx 为上述两个批量写入接口单独允许 128 KiB 请求，以容纳 1
 
 来源创建可选 `startScan` 和 WebDAV 的 `autoExtractEmbedded`；省略时保持旧客户端只保存的行为。后台导入使用 `embedded-metadata/import-jobs` 上传、预览、映射、确认、查询、取消与重试，返回 lower camelCase 的 `MediaImportJob`；上传完成后由服务端续跑。`rebind` 保留歌曲身份与本地订正，单独重新核验媒体。默认共享 v4 使用稳定系列、版本与正式对象，兼容 v2/v3 导入；默认完整 ZIP，增量要求匹配基线，旧版本拒绝，删除提示不自动应用。详细状态、路径规则、限额及兼容边界见[媒体库说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/media-library.md#媒体入库资料合并与分享2026-11-10)。
 
+导入任务新增可选 `inputState`（`RETAINED` / `PENDING` / `RELEASED`）、`inputCleanupError`、`inputCleanupAfter`，单独表示上传 ZIP 的保留与回收；资料条目、附件引用和基线全部持久化后即可回收 ZIP，核验、取消后恢复和显式重试读取持久化记录。清理失败延后自动重试，不改变导入结果或重复应用资料。每轮核验只列举每个父目录一次，失败保存到条目，显式重试仅重查失败项；相同 URL 更换账号时全部重新核验。`pathOnlyCount` 是 `presentCount` 中未校验大小的数量，样本可返回 `verification` 与 `verificationLevel`（`PATH_ONLY` / `PATH_AND_SIZE` / `null`），避免将未知大小当作大小一致。
+
 
 ## Metadata Schema 1.0 与正式资料接口（2026-11-11）
 
@@ -241,3 +255,12 @@ Nginx 为上述两个批量写入接口单独允许 128 KiB 请求，以容纳 1
 ## 客户端发行与在线更新
 
 公开只读版本、APK与二维码接口由 Go 提供，platform 仅 mobile/tv，完整字段与权限见 OpenAPI 路径及 [更新契约](../client-updates.md)。运行仅提供镜像内包，不访问 GitHub；旧 TV current/APK 接口保留兼容。
+
+音轨资料的接收端复用：完整资料包的源流映射在接收方精确相对路径及可得大小核验通过后可直接采用，`origin=SHARED`、`reuseBasis=PATH_ONLY|PATH_AND_SIZE`、`receiverProbed=false`；这不表示接收端已探测或完成内容摘要验证。根地址或账号绑定变化、路径缺失、大小冲突使采用路径失效。本机 SET/CLEAR 始终优先。
+
+约定的 FLAC/MP3 等单轨歌曲无需媒体探测即可返回 `state=CONFIRMED, origin=SOURCE, originalSelection={kind:UNIQUE_AUDIO}`；此时没有 `originalId`，不得伪造流索引。选择原唱表示使用唯一/默认音频；必要探测或播放观察后才返回实测的 `originalId`。`audioRoles` 正式流映射契约仍只允许实测/资料包声明的 `stream:N`。
+
+接收端解析结果必须绑定当时的来源根地址、账号及 WebDAV 资源代次；更换绑定后拒绝旧结果和历史流映射。升级前缺少绑定快照的解析历史不会自动补成当前账号的探测依据，本机人工 SET/CLEAR 保留；旧运行任务需重新读取音轨。
+
+
+音轨任务的 `cleanupState=PENDING|RELEASED`、`cleanupError` 独立描述计算节点临时输入/样本清理。清理失败保留原业务成功/失败状态和已确认角色，后台仅重试回收并刷新终态任务的清理快照，不重新识别或重复采用角色；公开任务视图不返回内部临时路径。旧节点可省略这些字段。

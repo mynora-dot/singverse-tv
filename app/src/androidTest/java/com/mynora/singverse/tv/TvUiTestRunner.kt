@@ -15,8 +15,26 @@ import androidx.activity.compose.setContent
 /** Replaces only the instrumented launch; this class is absent from production APKs. */
 class TvUiTestRunner : InstrumentationTestRunner() {
     override fun newActivity(loader: ClassLoader, className: String, intent: Intent): Activity =
-        if (className == MainActivity::class.java.name && intent.hasExtra("tv-ui-fixture")) TvUiFixtureActivity()
+        if (className == MainActivity::class.java.name && intent.getBooleanExtra("tv-login-fixture", false)) TvLoginFixtureActivity()
+        else if (className == MainActivity::class.java.name && intent.hasExtra("tv-ui-fixture")) TvUiFixtureActivity()
         else super.newActivity(loader, className, intent)
+}
+
+/** Empty preferences prevent login tests from touching the user's saved television connection. */
+class TvLoginFixtureActivity : ComponentActivity() {
+    lateinit var app: TvApp
+        private set
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val isolated = object : ContextWrapper(this) {
+            private val prefix = "tv-login-test-${java.util.UUID.randomUUID()}-"
+            override fun getApplicationContext(): Context = this
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = super.getSharedPreferences(prefix + name, mode)
+        }
+        app = TvApp(isolated, pairingLifetimeMillis = intent.getLongExtra("tv-login-lifetime", 300_000))
+        setContent { SingVerseTvTheme { if (app.connected) TvScreen(app, TvFocusMemory()) else TvLoginScreen(app) } }
+    }
+    override fun onDestroy() { if (::app.isInitialized) app.close(); super.onDestroy() }
 }
 
 /** Real production Compose screens, isolated in-memory data and loopback HTTP only. */
