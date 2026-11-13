@@ -97,19 +97,18 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
 }
 
 /** Presentation only: Compose/TV Material retain ownership of remote focus and key handling. */
-@Composable internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control, focusedScale: Float = 1.04f): Modifier {
-    val amount by animateFloatAsState(if (focused) 1f else 0f, tween(180), label = "tvFocus")
+@Composable internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control, focusedScale: Float = 1f): Modifier {
+    val amount by animateFloatAsState(if (focused) 1f else 0f, tween(160), label = "tvFocus")
     return this.graphicsLayer {
         scaleX = 1f + (focusedScale - 1f) * amount
         scaleY = 1f + (focusedScale - 1f) * amount
         clip = false
     }.drawWithContent {
-        val outline = shape.createOutline(size, layoutDirection, this)
-        if (focused && amount > 0f) {
-            drawOutline(outline, Focus.copy(alpha = .08f * amount), style = Stroke(12.dp.toPx()))
-        }
         drawContent()
-        if (focused && amount > 0f) drawOutline(outline, Focus.copy(alpha = .95f * amount), style = Stroke(1.5.dp.toPx()))
+        if (focused && amount > 0f) {
+            val outline = shape.createOutline(size, layoutDirection, this)
+            drawOutline(outline, Focus.copy(alpha = .95f * amount), style = Stroke(2.dp.toPx()))
+        }
     }
 }
 
@@ -139,6 +138,7 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
     textSize: androidx.compose.ui.unit.TextUnit = 15.sp,
     enabled: Boolean = true,
     danger: Boolean = false,
+    quiet: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -146,6 +146,7 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
     val content = when {
         !enabled -> Muted.copy(alpha = .55f)
         selected -> Ink
+        quiet -> Muted
         danger -> Danger
         else -> Paper
     }
@@ -158,10 +159,20 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
         shape = ButtonDefaults.shape(shape),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
         colors = ButtonDefaults.colors(
-            containerColor = if (selected) Primary else if (danger) Danger.copy(alpha = .09f) else Panel,
+            containerColor = when {
+                quiet -> Panel.copy(alpha = .45f)
+                selected -> Primary
+                danger -> Danger.copy(alpha = .09f)
+                else -> Panel
+            },
             contentColor = content,
-            focusedContainerColor = if (selected) Primary else if (danger) Danger.copy(alpha = .16f) else Elevated,
-            focusedContentColor = content,
+            focusedContainerColor = when {
+                selected -> Primary
+                quiet -> Elevated
+                danger -> Danger.copy(alpha = .16f)
+                else -> Elevated
+            },
+            focusedContentColor = if (quiet) Paper else content,
             disabledContainerColor = Panel.copy(alpha = .45f),
             disabledContentColor = content,
         ),

@@ -127,7 +127,7 @@ import kotlinx.coroutines.delay
     }
 }
 
-@Composable internal fun QuickSongEntries(app: TvApp, large: Boolean = false) {
+@Composable internal fun QuickSongEntries(app: TvApp) {
     val entries = listOf(
         Triple("search", "搜索歌曲", "歌名 / 拼音 / 编号"),
         Triple("mic", "歌手点歌", "按歌手查找歌曲"),
@@ -137,18 +137,16 @@ import kotlinx.coroutines.delay
     Row(Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         entries.forEachIndexed { i, entry ->
             HomeTile(
-                Modifier.weight(if (large && i == 0) 1.25f else 1f).height(if (large) 118.dp else 52.dp).tvFocusTarget("quick:$i"),
+                Modifier.weight(1f).height(52.dp).tvFocusTarget("quick:$i"),
                 onClick = { app.navigate(listOf("找歌", "歌手", "分类", "歌单")[i]) },
             ) {
                 val foreground = Paper
-                Row(Modifier.fillMaxSize().padding(horizontal = if (large) 20.dp else 14.dp), verticalAlignment = Alignment.CenterVertically,
+                Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HomeGlyph(entry.first, Modifier.size(if (large) 25.dp else 19.dp), foreground)
+                    HomeGlyph(entry.first, Modifier.size(19.dp), foreground)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(entry.second, color = foreground, fontSize = if (large) 18.sp else 14.sp, lineHeight = if (large) 25.sp else 19.sp,
+                        Text(entry.second, color = foreground, fontSize = 14.sp, lineHeight = 19.sp,
                             fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (large) Text(entry.third, color = foreground.copy(alpha = .58f), fontSize = 11.sp, lineHeight = 15.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Text("›", color = foreground.copy(alpha = .7f), fontSize = 22.sp, fontWeight = FontWeight.Light)
                 }
@@ -242,7 +240,7 @@ import kotlinx.coroutines.delay
         return
     }
     Canvas(modifier) {
-        val w = size.width; val h = size.height; val s = w * .075f
+        val w = size.width; val h = size.height; val s = 1.75.dp.toPx()
         fun line(x: Float, y: Float, x2: Float, y2: Float) = drawLine(color, Offset(w * x, h * y), Offset(w * x2, h * y2), s, StrokeCap.Round)
         when (kind) {
             "search" -> { drawCircle(color, w * .29f, Offset(w * .42f, h * .42f), style = Stroke(s)); line(.64f, .65f, .9f, .91f) }
@@ -251,6 +249,7 @@ import kotlinx.coroutines.delay
             "grid" -> for (x in 0..1) for (y in 0..1) drawRoundRect(color, Offset(w * (.08f + x * .51f), h * (.08f + y * .51f)), Size(w * .32f, h * .32f), androidx.compose.ui.geometry.CornerRadius(w * .07f), style = Stroke(s))
             "playlist" -> { for (i in 0..2) { drawCircle(color, s * .45f, Offset(w * .1f, h * (.2f + i * .28f))); line(.28f, .2f + i * .28f, .8f, .2f + i * .28f) }; line(.8f, .55f, .8f, .9f); drawOval(color, Offset(w * .56f, h * .78f), Size(w * .25f, h * .2f)) }
             "disc" -> { drawCircle(color, w * .43f, center, style = Stroke(s)); drawCircle(color, w * .12f, center, style = Stroke(s)); drawArc(color.copy(alpha = .5f), 210f, 90f, false, Offset(w * .2f, h * .2f), Size(w * .6f, h * .6f), style = Stroke(s)) }
+            "chevron" -> { line(.38f, .22f, .64f, .5f); line(.64f, .5f, .38f, .78f) }
             else -> { line(.5f, .2f, .5f, .8f); line(.2f, .5f, .8f, .5f) }
         }
     }

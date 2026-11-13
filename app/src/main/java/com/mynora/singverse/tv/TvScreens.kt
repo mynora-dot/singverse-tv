@@ -361,15 +361,93 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
 internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.objects().orEmpty().count { it.optString("status") in listOf("WAITING", "HANDOFF", "PLAYING") }
 
 @Composable private fun SongCenter(app: TvApp) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Heading("点歌中心", "从熟悉的歌开始，也可以按歌手、分类或歌单慢慢挑。")
-        QuickSongEntries(app, large = true)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Action("刷新曲库") { app.run { app.loadHome(); app.loadSongs(); app.loadTags() } }
-            if (app.snapshot.optString("status") == "ENDED") Action("开始新聚会", selected = true) { app.newSession() }
-            if (app.homePlaylists.isNotEmpty()) StatusPill("NAS 共享歌单 · ${app.homePlaylists.size} 个", Primary)
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("点歌中心", color = Paper, fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.Medium)
+            Text("按歌名搜索，或从歌手、分类和歌单里挑一首", color = Muted, fontSize = 14.sp, lineHeight = 20.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text("歌单由 NAS 管理端统一维护；浏览共享歌单后，可按保存顺序逐首点唱。", color = Muted, fontSize = 13.sp, lineHeight = 19.sp)
+        SongEntryRow(app)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("曲库", color = Paper, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
+                Text(librarySummary(app), color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.weight(1f))
+                if (app.snapshot.optString("status") == "ENDED") Action("开始新聚会", selected = true, textSize = 13.sp) { app.newSession() }
+                Action("刷新曲库", quiet = true, textSize = 13.sp) { app.run { app.loadHome(); app.loadSongs(); app.loadTags() } }
+            }
+            LibraryShelf(app, Modifier.weight(1f))
+            Text("歌单由 NAS 管理端维护，选中后按保存顺序逐首点唱", color = Muted.copy(alpha = .72f), fontSize = 11.sp,
+                lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+private fun librarySummary(app: TvApp): String {
+    val songs = if (app.homeTotal > 0) "${app.homeTotal} 首" else ""
+    val playlists = if (app.homePlaylists.isNotEmpty()) "${app.homePlaylists.size} 个歌单" else ""
+    return listOf(songs, playlists).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { "等待同步" }
+}
+
+@Composable private fun SongEntryRow(app: TvApp) {
+    val entries = listOf(
+        Triple("search", "搜索歌曲", "歌名 · 歌手 · 拼音 · 编号"),
+        Triple("mic", "歌手点歌", "按歌手找歌"),
+        Triple("grid", "分类点歌", "语种 · 风格 · 年代"),
+        Triple("playlist", "我的歌单", if (app.homePlaylists.isNotEmpty()) "${app.homePlaylists.size} 个共享歌单" else "共享歌单"),
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        entries.forEachIndexed { index, entry ->
+            SongEntryCard(entry.first, entry.second, entry.third,
+                Modifier.weight(if (index == 0) 1.35f else 1f).height(128.dp), "quick:$index") {
+                app.navigate(listOf("找歌", "歌手", "分类", "歌单")[index])
+            }
+        }
+    }
+}
+
+@Composable private fun SongEntryCard(icon: String, title: String, subtitle: String, modifier: Modifier, focusKey: String, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = TvShape.card
+    Button(onClick, modifier = modifier.tvFocusTarget(focusKey).onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape),
+        contentPadding = PaddingValues(0.dp), scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(shape),
+        colors = ButtonDefaults.colors(containerColor = Panel, contentColor = Paper,
+            focusedContainerColor = Elevated, focusedContentColor = Paper)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                HomeGlyph(icon, Modifier.size(28.dp), Paper.copy(alpha = if (focused) .95f else .78f))
+                Spacer(Modifier.weight(1f))
+                HomeGlyph("chevron", Modifier.size(16.dp), Muted.copy(alpha = if (focused) 1f else .6f))
+            }
+            Spacer(Modifier.weight(1f))
+            Text(title, color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+                overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable private fun LibraryShelf(app: TvApp, modifier: Modifier = Modifier) {
+    val covers = (if (app.homeSongs.isNotEmpty()) app.homeSongs else app.songs).take(8)
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        if (covers.isEmpty()) {
+            Row(Modifier.fillMaxSize().background(Panel.copy(alpha = .5f), TvShape.card).padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                MusicMark(Modifier.size(26.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(if (app.busy) "正在读取曲库" else "曲库还没有歌曲", color = Paper, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                    Text("从 NAS 扫描歌曲后，封面会排在这里", color = Muted, fontSize = 12.sp, lineHeight = 16.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        } else {
+            val gap = 12.dp
+            val size = ((maxWidth - gap * 7) / 8f).coerceAtMost(maxHeight).coerceAtLeast(1.dp)
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.Top) {
+                covers.forEach { song -> SongArtwork(app, song, Modifier.size(size)) }
+            }
+        }
     }
 }
 
@@ -378,19 +456,20 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" }
     val next = queue.firstOrNull { it.optString("status") == "HANDOFF" } ?: queue.firstOrNull { it.optString("status") == "WAITING" }
     val song = (current ?: next)?.optJSONObject("song")
-    Row(Modifier.fillMaxWidth().height(52.dp).background(Panel.copy(alpha = .9f), TvShape.card)
-        .border(1.dp, Hairline.copy(alpha = .45f), TvShape.card).padding(horizontal = 12.dp, vertical = 6.dp),
+    Row(Modifier.fillMaxWidth().height(56.dp).background(Panel.copy(alpha = .9f), TvShape.card)
+        .border(1.dp, Hairline.copy(alpha = .45f), TvShape.card).padding(horizontal = 14.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SongArtwork(app, song, Modifier.size(38.dp))
+        SongArtwork(app, song, Modifier.size(40.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(if (song == null) "今晚，唱你喜欢的歌" else song.optString("title"), color = Paper, fontSize = 13.sp, lineHeight = 18.sp,
-                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (song == null) "今晚，唱你喜欢的歌" else song.optString("title"), color = Paper, fontSize = 14.sp, lineHeight = 19.sp,
+                fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(when {
                 app.snapshot.optString("status") == "ENDED" -> "聚会已结束"
                 current != null -> "${song?.artists()} · ${stateLabel(app.playerState)}"
                 next != null -> "${song?.artists()} · 等待确认开唱"
                 else -> "从曲库选一首，开启家庭音乐现场"
-            }, color = Muted, fontSize = 10.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }, color = if (current != null) Success.copy(alpha = .9f) else Muted, fontSize = 11.sp, lineHeight = 15.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (!app.online) HomeButton("网络异常 · 重连", focusKey = "bar:reconnect") { app.reconnect() }
         HomeButton("已点歌曲 (${queuedSongCount(app)})", focusKey = "bar:queue") { app.navigate("已点") }
