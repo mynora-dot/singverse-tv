@@ -86,7 +86,7 @@ import androidx.tv.material3.Text
             PlayerControlButton("切歌", "next", "player:next", enabled = hasSong || waiting != null) { app.command("NEXT") }
             PlayerControlButton("已点", "queue", "player:queue", onClick = onQueue)
             val favorite = songId.isNotBlank() && app.isFavorite(songId)
-            PlayerControlButton(if (favorite) "已收藏" else "收藏", "favorite", "player:favorite", selected = favorite, enabled = songId.isNotBlank()) { app.toggleFavorite() }
+            PlayerControlButton(if (favorite) "已收藏" else "收藏", "favorite", "player:favorite", selected = favorite, enabled = songId.isNotBlank() && !app.favoriteSaving) { app.toggleFavorite() }
             Spacer(Modifier.weight(1f))
             Row(Modifier.background(Ink.copy(alpha = .48f), TvShape.control).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PlayerControlButton("原唱", "original", "player:role:original", selected = app.activeAudioRole == "original", enabled = app.canUseAudioRole(true)) { app.useAudioRole(true) }

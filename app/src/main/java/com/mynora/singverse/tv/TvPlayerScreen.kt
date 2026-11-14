@@ -100,6 +100,7 @@ import java.util.Locale
             if (!audioOnly) CurrentVideoSong(app, song)
             PlayerControls(app, audioOnly, onQueue = { queueOpen = true }, onLyrics = { settings = "歌词字幕" },
                 onOutput = { settings = "声音输出" }, onMore = { moreOpen = true }, primaryFocus = primary)
+            if (app.favoritesError.isNotBlank()) Text("收藏：${app.favoritesError}", color = Muted, fontSize = 14.sp)
         }
     }
     if (queueOpen) Modal("已点歌曲", "当前演唱保持独立，这里只管理接下来的歌曲。", dismiss = { queueOpen = false }, wide = true) {
@@ -112,7 +113,7 @@ import java.util.Locale
             item { Action("音轨设置", Modifier.fillMaxWidth()) { settings = "音轨" } }
             item { Action("同步设置", Modifier.fillMaxWidth()) { settings = "同步" } }
             item { Action("音质详情", Modifier.fillMaxWidth()) { qualityOpen = true } }
-            item { Action("本机收藏 · ${app.favoriteSongs().size}", Modifier.fillMaxWidth()) { favoritesOpen = true } }
+            item { Action("NAS 收藏 · ${app.favoriteSongs().size}", Modifier.fillMaxWidth()) { favoritesOpen = true; app.refreshFavorites() } }
             if (!audioOnly) item { Action(if (cleanVideo) "显示辅助卡片" else "纯净画面 · 隐藏辅助卡片", Modifier.fillMaxWidth(), selected = cleanVideo) { cleanVideo = !cleanVideo; moreOpen = false } }
             item { Action("刷新手机连接入口", Modifier.fillMaxWidth()) { if (!app.online) app.reconnect(); app.invite(); moreOpen = false } }
             item { Action("重试本机播放", Modifier.fillMaxWidth()) { app.retryPlayback(); moreOpen = false } }
@@ -133,22 +134,9 @@ import java.util.Locale
         }
         Action("完成") { qualityOpen = false }
     }
-    if (favoritesOpen) Modal("本机收藏", "仅保存在这台电视，按 NAS 分开记录。", { favoritesOpen = false }, wide = true) {
+    if (favoritesOpen) Modal("NAS 共享收藏", "与此 NAS 的后台、手机共用，取消收藏不会删除歌曲文件。", { favoritesOpen = false }, wide = true) {
         Action("完成") { favoritesOpen = false }
-        val favorites = app.favoriteSongs()
-        if (favorites.isEmpty()) EmptyState("还没有收藏歌曲", "播放歌曲时按「收藏」，下次可从这里快速加入已点。")
-        else LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(6.dp)) {
-            items(favorites, key = { it.optString("id") }) { favorite ->
-                Row(Modifier.fillMaxWidth().background(Panel, TvShape.card).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SongArtwork(app, favorite, Modifier.size(50.dp))
-                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(favorite.optString("title"), color = Paper, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(favorite.artists(), color = Muted, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Action("加入已点", focusKey = "favorite:${favorite.optString("id")}") { app.command("ADD", songId = favorite.optString("id")) }
-                }
-            }
-        }
+        FavoritesContent(app, Modifier.weight(1f, fill = false).heightIn(max = 340.dp))
     }
 }
 

@@ -222,13 +222,39 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         playbackOptions.isRoleSelected(true) -> "original"
         else -> ""
     }
-    private val localFavorites = TvLocalFavorites(context)
-    private var favoriteRevision by mutableIntStateOf(0)
-    fun favoriteSongs(): List<JSONObject> { favoriteRevision; return localFavorites.songs(client.base) }
-    fun isFavorite(songId: String): Boolean = favoriteSongs().any { it.optString("id") == songId }
+    private val sharedFavorites = TvSharedFavorites(
+        connection = { "${client.connectionGeneration}:${client.base}" },
+        read = { page ->
+            val result = json("/api/v1/tv/favorites?page=$page&size=100")
+            FavoritePage(result.getJSONArray("items").objects(), result.getInt("totalElements"), result.getLong("revision"))
+        },
+        write = { ids, selected ->
+            json("/api/v1/tv/favorites", "PUT", JSONObject().put("songIds", JSONArray(ids)).put("selected", selected))
+                .getJSONArray("songIds").let { values -> (0 until values.length()).map { values.getString(it) }.toSet() }
+        },
+        id = { song: JSONObject -> song.getString("id") },
+    )
+    val favoritesLoading: Boolean get() = sharedFavorites.loading
+    val favoriteSaving: Boolean get() = sharedFavorites.saving
+    val favoritesReady: Boolean get() = sharedFavorites.ready
+    val favoritesError: String get() = sharedFavorites.error
+    fun favoriteSongs(): List<JSONObject> = sharedFavorites.songs
+    fun isFavorite(songId: String): Boolean = songId in sharedFavorites.ids
+    fun refreshFavorites() { if (connected) scope.launch { sharedFavorites.load() } }
+    fun setFavorite(songId: String, selected: Boolean) {
+        if (!connected) return
+        scope.launch { if (!sharedFavorites.set(songId, selected)) error = sharedFavorites.error }
+    }
     fun toggleFavorite() {
-        currentSong?.takeIf { it.optString("id") == snapshot.optJSONObject("playback")?.optString("songId") }?.let {
-            localFavorites.toggle(client.base, it); favoriteRevision++
+        val songId = currentSong?.optString("id").orEmpty()
+        val connectionGeneration = client.connectionGeneration
+        val selected = !isFavorite(songId)
+        if (songId.isNotBlank() && songId == snapshot.optJSONObject("playback")?.optString("songId")) {
+            scope.launch {
+                if (!sharedFavorites.ready) sharedFavorites.load()
+                if (connectionGeneration != client.connectionGeneration) return@launch
+                if (!sharedFavorites.set(songId, selected)) error = sharedFavorites.error
+            }
         }
     }
     var playbackQuality by mutableStateOf("auto")
@@ -291,7 +317,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     var address by mutableStateOf(client.base)
     var query by mutableStateOf("")
     internal val login: TvLogin = TvLogin(context, discovery, pairingLifetimeMillis) { base, credential ->
-        stopLocal(); loadedAttempt = ""; resetUpdates(); client.save(base, credential); address = base
+        stopLocal(); loadedAttempt = ""; resetUpdates(); sharedFavorites.reset(); client.save(base, credential); sharedFavorites.reset(); address = base
         try { establishConnection() } catch (failure: Exception) {
             if (!connected && client.token == credential) client.clear()
             throw failure
@@ -391,6 +417,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             }
         })
         if (client.token.isNotEmpty()) run { connect() }
+        scope.launch { while (isActive) { delay(30000); if (connected && foreground && !sharedFavorites.loading) sharedFavorites.load() } }
         scope.launch { while (isActive) { delay((2000L * (1 shl failureCount.coerceAtMost(3))).coerceAtMost(16000)); if (connected) refresh() } }
         scope.launch { while (isActive) { delay(60000); if (connected && online && foreground) checkUpdate(manual = false) } }
         scope.launch { while (isActive) { delay(10000); val id=transcodeId;if(connected && id.isNotBlank()) runCatching { json("/api/v1/tv/transcoding/$id") } } }
@@ -611,6 +638,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         loadHome()
         login.recordSuccess(client.base, serverName)
         connected = true; online = true; failureCount = 0; error = ""
+        refreshFavorites()
         checkUpdate(manual = false, connection = true)
         ensureInvitation()
         run { loadSongs(); loadTags() }
@@ -634,7 +662,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                 }
             }
             lastLibraryRefresh = android.os.SystemClock.elapsedRealtime()
-        } } catch (e: Exception) { if (e is CancellationException) throw e; online = false; participantsKnown = false; failureCount++; if (e is TvHttpException && e.status == 401) { pauseLocal(); resetUpdates(); client.clear(); connected = false; clearPartyConnection(); login.open(LoginPage.METHODS); error = "" } else error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}" } }
+        } } catch (e: Exception) { if (e is CancellationException) throw e; online = false; participantsKnown = false; failureCount++; if (e is TvHttpException && e.status == 401) { pauseLocal(); resetUpdates(); client.clear(); sharedFavorites.reset(); connected = false; clearPartyConnection(); login.open(LoginPage.METHODS); error = "" } else error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}" } }
     private suspend fun refreshParticipants(sid: String) {
         val generation = ++participantsGeneration
         val server = client.base; val credential = client.token
@@ -677,6 +705,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                 "歌手" -> fetchArtists()
                 "分类" -> loadTags()
                 "歌单" -> fetchPlaylists()
+                "收藏" -> sharedFavorites.load()
                 "已点", "设置" -> { if (destination == "设置") lastParticipantsRefresh = 0; refresh() }
             }
         }
@@ -990,7 +1019,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             withTimeoutOrNull(3000) { runCatching { client.request("/api/v1/tv/sessions/$sessionId/playback-events", "POST", event, connection) } }
         }
     }
-    fun foreground() { foreground = true;playbackOptions.refreshRoutes();resumeUpdateInstallation();if(connected){reconnect();checkUpdate(manual = false)} }
+    fun foreground() { foreground = true;refreshFavorites();playbackOptions.refreshRoutes();resumeUpdateInstallation();if(connected){reconnect();checkUpdate(manual = false)} }
     fun background() { playbackLifecycleGeneration++; foreground = false; login.pausePairing(); pauseLocal() }
     fun pauseLocal() { resumeAfterPreparation = false; player.pause(); report() }
     fun stopLocal() {
@@ -1033,7 +1062,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         participantsKnown = false
         lastParticipantsRefresh = 0
     }
-    fun disconnect() { currentSongGeneration++; currentSong=null; playbackMedia=JSONObject(); observedVideo=false; observedAudio=false; selectedAudioFormat=null; embeddedCues=emptyList(); login.open(LoginPage.METHODS);playlistGeneration++;playlistDetail=null;playlists=emptyList();playlistPage=0;playlistQuery="";playlistTotal=0;lastPlaylistId=""; stopLocal();loadedAttempt="";pendingOperation=null;resetUpdates();online=false; client.clear(); connected = false; login.cancel(); snapshot = JSONObject(); clearPartyConnection(); artistDetail=null;artistDetailGeneration++;lastArtistId=""; selected = null; homeSongs = emptyList(); homeAppearance = JSONObject(); homePlaylists = emptyList(); songs = emptyList(); artists = emptyList(); tags = emptyList(); participants = emptyList(); homeTotal = 0; artistTotal = 0; total = 0; query = ""; artistQuery = ""; number = 0; artistPage = 0; artistId = ""; selectedTags = emptySet(); unclassified = false; requestGeneration++; artistGeneration++; detailGeneration++ }
+    fun disconnect() { sharedFavorites.reset(); currentSongGeneration++; currentSong=null; playbackMedia=JSONObject(); observedVideo=false; observedAudio=false; selectedAudioFormat=null; embeddedCues=emptyList(); login.open(LoginPage.METHODS);playlistGeneration++;playlistDetail=null;playlists=emptyList();playlistPage=0;playlistQuery="";playlistTotal=0;lastPlaylistId=""; stopLocal();loadedAttempt="";pendingOperation=null;resetUpdates();online=false; client.clear(); sharedFavorites.reset(); connected = false; login.cancel(); snapshot = JSONObject(); clearPartyConnection(); artistDetail=null;artistDetailGeneration++;lastArtistId=""; selected = null; homeSongs = emptyList(); homeAppearance = JSONObject(); homePlaylists = emptyList(); songs = emptyList(); artists = emptyList(); tags = emptyList(); participants = emptyList(); homeTotal = 0; artistTotal = 0; total = 0; query = ""; artistQuery = ""; number = 0; artistPage = 0; artistId = ""; selectedTags = emptySet(); unclassified = false; requestGeneration++; artistGeneration++; detailGeneration++ }
     fun newSession() = run { acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession=true); ensureInvitation() }
     fun close() { resetUpdates(); releasePlaybackHistory(); login.close(); resourceGeneration++; releaseExecution(); discovery.stop(); playbackOptions.close(); scope.cancel(); player.release() }
 }

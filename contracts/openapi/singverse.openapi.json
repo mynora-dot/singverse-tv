@@ -24742,6 +24742,368 @@
           }
         }
       }
+    },
+    "/api/v1/favorites": {
+      "get": {
+        "operationId": "adminMobileListFavorites",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Search NAS shared favorites before pagination",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Administrator session; PUT requires existing CSRF protocol. TV Bearer cannot authorize this route.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "availability",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ALL",
+                "AVAILABLE",
+                "UNAVAILABLE"
+              ],
+              "default": "ALL"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "RECENT",
+                "TITLE",
+                "ARTIST"
+              ],
+              "default": "RECENT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoritePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      },
+      "put": {
+        "operationId": "adminMobileSetFavorites",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Atomically set explicit favorite state for 1–500 songs",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Administrator session; PUT requires existing CSRF protocol. TV Bearer cannot authorize this route. Idempotent desired state; retries do not change addedAt or revision. Removes only favorite relations, never songs or media. All IDs validated before committing. Response contains final complete IDs and revision.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      }
+    },
+    "/api/v1/favorites/ids": {
+      "get": {
+        "operationId": "adminMobileFavoriteIds",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Read complete favorite IDs and revision",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Administrator session; PUT requires existing CSRF protocol. TV Bearer cannot authorize this route.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      }
+    },
+    "/api/v1/tv/favorites": {
+      "get": {
+        "operationId": "tvListFavorites",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Search NAS shared favorites before pagination",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Only device credentials accepted; party participants and admin Cookies rejected.",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "availability",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ALL",
+                "AVAILABLE",
+                "UNAVAILABLE"
+              ],
+              "default": "ALL"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "RECENT",
+                "TITLE",
+                "ARTIST"
+              ],
+              "default": "RECENT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoritePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      },
+      "put": {
+        "operationId": "tvSetFavorites",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Atomically set explicit favorite state for 1–500 songs",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Only device credentials accepted; party participants and admin Cookies rejected. Idempotent desired state; retries do not change addedAt or revision. Removes only favorite relations, never songs or media. All IDs validated before committing. Response contains final complete IDs and revision.",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      }
+    },
+    "/api/v1/tv/favorites/ids": {
+      "get": {
+        "operationId": "tvFavoriteIds",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Read complete favorite IDs and revision",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Only device credentials accepted; party participants and admin Cookies rejected.",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -34375,6 +34737,131 @@
           "deviceId",
           "token"
         ]
+      },
+      "FavoriteState": {
+        "type": "object",
+        "required": [
+          "songIds",
+          "revision"
+        ],
+        "properties": {
+          "songIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "FavoriteChange": {
+        "type": "object",
+        "required": [
+          "songIds",
+          "selected"
+        ],
+        "properties": {
+          "songIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FavoriteSong": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "artists",
+          "available",
+          "addedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "artists": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "album": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coverPath": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Song ID currently exists in the library; does not probe source reachability."
+          },
+          "addedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FavoritePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "size",
+          "totalElements",
+          "totalFavorites",
+          "revision"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FavoriteSong"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalElements": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalFavorites": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     }
   }

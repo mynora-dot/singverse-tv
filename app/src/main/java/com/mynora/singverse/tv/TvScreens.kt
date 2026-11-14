@@ -254,7 +254,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                         Text("SingVerse", color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        listOf("首页", "点歌", "已点", "设置").forEach { page ->
+                        listOf("首页", "点歌", "收藏", "已点", "设置").forEach { page ->
                             TvNavigation(if (page == "已点") "已点 ${queuedSongCount(app)}" else page,
                                 (if (page == selectedNavigation) Modifier.focusRequester(homeFocus) else Modifier).tvFocusTarget("nav:$page")
                                     .onFocusChanged { if (it.isFocused && memory.directionalInput && memory.activeDialogs == 0) selectNavigation(page) },
@@ -276,6 +276,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                         "歌单" -> Playlists(app, playlistsGrid)
                         "歌手" -> Artists(app, artistsGrid)
                         "分类" -> Categories(app, categoriesGrid, categoryDimension) { categoryDimension = it }
+                        "收藏" -> FavoritesContent(app, Modifier.fillMaxSize())
                         "已点" -> Queue(app)
                         "设置" -> Settings(app)
                     }

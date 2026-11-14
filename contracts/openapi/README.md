@@ -144,7 +144,7 @@ TV 非转码增强新增设备专用 text-tracks 与 releases/current、releases
 
 `PlaybackClient.profiles.h264`／`levels.h264` 必须来自同一实际解码器能力组合，level 使用 ffprobe 整数单位（31=3.1、9=1b），不可只因 MIME 存在就固定报告 High/41。`quality=auto` 尊重已报告尺寸、帧率和码率；显式画质仍施加所选上限。`force=true` 在新执行中强制兼容视频编码及 AAC，不复用旧离线版本；已生成的匹配兼容缓存仍可直接使用。明确上报 H.264 profile/level 时服务端会限制编码参数；未报告时保持原默认值。公开请求字段不变，Go 到 compute 的内部 `target.profile/level` 与 `/negotiate.fingerprint` 见 compute README。HLS 只有主列表声明的所有 rendition 的首片和初始化文件均可读时才 READY，完成后的整曲缓存复制在后台执行。
 
-手机原生只读曲库：GET `/api/v1/mobile/library/songs`、`/{id}` 和 `/{id}/text-tracks`，使用管理员 Cookie，不接受 TV/party Bearer 替代登录。列表复用既有搜索及分类，返回 MobileSongPage；条目保留独立媒体 ID，补充格式/媒体类型，封面指向管理员资源。播放继续使用 `/api/v1/transcoding`；手机本机收藏和历史不属于服务端业务表。
+手机原生只读曲库：GET `/api/v1/mobile/library/songs`、`/{id}` 和 `/{id}/text-tracks`，使用管理员 Cookie，不接受 TV/party Bearer 替代登录。列表复用既有搜索及分类，返回 MobileSongPage；条目保留独立媒体 ID，补充格式/媒体类型，封面指向管理员资源。播放继续使用 `/api/v1/transcoding`；收藏使用同一 NAS 的 `/api/v1/favorites`；练唱历史仍保存在手机。共享收藏见 `../favorites.md`。
 
 ## 全曲库音轨角色与离线分离
 
