@@ -12,6 +12,7 @@ import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from build_version import build_version
+from apk_signature import release_certificate
 
 
 def version_code(version):
@@ -51,17 +52,16 @@ def main():
     signer = subprocess.run([str(tools / "apksigner"), "verify", "--verbose", "--print-certs", str(args.apk)], check=True, capture_output=True, text=True).stdout
     package = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging, re.M)
     sdk = re.search(r"^sdkVersion:'(\d+)'", badging, re.M)
-    certificates = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]+)$", signer, re.M)
     expected = "com.mynora.singverse." + args.platform
     if not package or package.group(1) != expected or int(package.group(2)) != code or package.group(3) != version:
         raise SystemExit("APK package/version differs from the Actions release version")
     minimum = 24 if args.platform == "mobile" else 21
     if not sdk or int(sdk.group(1)) != minimum:
         raise SystemExit("APK minSdk differs from platform contract")
-    if len(certificates) != 1 or not re.fullmatch(r"[a-fA-F0-9]{64}", certificates[0]):
-        raise SystemExit("APK must have one valid release certificate")
-    if re.search(r"^Signer #\d+ certificate DN:.*CN=Android Debug", signer, re.M):
-        raise SystemExit("Debug-signed APK cannot be published")
+    try:
+        certificate = release_certificate(signer)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     native = re.search(r"^native-code:(.*)$", badging, re.M)
     abis = sorted(re.findall(r"'([^']+)'", native.group(1))) if native else ["universal"]
     data = args.apk.read_bytes()
@@ -73,7 +73,7 @@ def main():
     name = "singverse-" + args.platform + ".apk"
     manifest = dict(schemaVersion=1, platform=args.platform, versionCode=code, versionName=version,
                     packageName=expected, minSdk=minimum, abis=abis, size=len(data), sha256=hashlib.sha256(data).hexdigest(),
-                    certificateSha256=certificates[0].lower(), notes=notes)
+                    certificateSha256=certificate, notes=notes)
     args.output.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(args.apk, args.output / name)
     (args.output / "release.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
