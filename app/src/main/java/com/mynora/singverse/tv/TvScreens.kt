@@ -106,7 +106,10 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
         val density = LocalDensity.current
         val scale = minOf(maxWidth.value / 960f, maxHeight.value / 540f)
         CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
-            TvScreenContent(app, focusMemory)
+            Box(Modifier.fillMaxSize()) {
+                TvScreenContent(app, focusMemory)
+                PartyReactionOverlay(app)
+            }
         }
     }
 }
@@ -687,13 +690,15 @@ private fun librarySummary(app: TvApp): String {
 }
 
 @Composable internal fun Queue(app: TvApp, compact: Boolean = false) {
+    val fair = app.snapshot.optString("queuePolicy") == "FAIR"
     val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
     val waiting = tvWaitingQueue(queue) { it.optString("status") }
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" } ?: queue.firstOrNull { it.optString("status") == "HANDOFF" }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (compact) SectionTitle("接下来", "${waiting.size} 首待唱") else Heading("待唱队列", "${waiting.size} 首待唱 · 选择歌曲可调整顺序")
+            if (compact) SectionTitle("接下来", "${waiting.size} 首待唱") else Heading("待唱队列", if (fair) "${waiting.size} 首待唱 · 按人轮流，各自歌曲保持点歌顺序" else "${waiting.size} 首待唱 · 选择歌曲可调整顺序")
             Spacer(Modifier.weight(1f))
+            if (!compact && fair && waiting.size > 1) Action("公平打乱") { app.command("SHUFFLE") }
             if (current == null && waiting.isNotEmpty()) Action("开始下一首", selected = true) { app.command("START") }
         }
         if (!compact) current?.let { item ->
@@ -726,7 +731,7 @@ private fun librarySummary(app: TvApp): String {
                 items(waiting, key = { it.getString("id") }) { item -> QueueRow(app, item, waiting.indexOf(item), waiting.size) }
             }
             if (!compact) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("确认歌曲后选择排序操作", color = Muted, fontSize = 12.sp)
+                Text(if (fair) "临时插队仅占一个下一首优先位，唱完恢复轮流" else "确认歌曲后选择排序操作", color = Muted, fontSize = 12.sp)
                 Spacer(Modifier.weight(1f))
                 Action("清空待唱", danger = true) { app.pendingConfirm = "清空待唱" }
             }
@@ -751,14 +756,18 @@ private fun librarySummary(app: TvApp): String {
                 SongArtwork(app, song, Modifier.size(46.dp))
                 Column(Modifier.weight(1f)) {
                     Text(song?.optString("title").orEmpty(), fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(song?.artists().orEmpty(), color = Muted, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${song?.artists().orEmpty()} · ${item.optString("ownerName", "电视")}点的${if (item.optBoolean("priority")) " · 下一首优先" else ""}", color = Muted, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
         if (focused) {
             val actions = buildList {
-                if (index > 0) { add("置顶" to "TOP"); add("上移" to "UP") }
-                if (index < count - 1) add("下移" to "DOWN")
+                if (app.snapshot.optString("queuePolicy") == "FAIR") {
+                    add(if (item.optBoolean("priority")) "取消插队" to "UNTOP" else "优先下一首" to "TOP")
+                } else {
+                    if (index > 0) { add("置顶" to "TOP"); add("上移" to "UP") }
+                    if (index < count - 1) add("下移" to "DOWN")
+                }
                 add("移除" to "REMOVE")
             }
             actions.forEachIndexed { actionIndex, (label, command) ->

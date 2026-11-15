@@ -9984,7 +9984,7 @@
         "tags": [
           "TV and party"
         ],
-        "summary": "Idempotent party action; START requires TV, NEXT waits for TV confirmation",
+        "summary": "Idempotent queue action or attempt-bound playback control; FAIR permits all joined participants to control playback",
         "operationId": "tv_post_tv_sessions_id_commands",
         "security": [
           {
@@ -10246,7 +10246,7 @@
         "tags": [
           "TV and party"
         ],
-        "summary": "Idempotent party action; START requires TV, NEXT waits for TV confirmation",
+        "summary": "Idempotent queue action or attempt-bound playback control; FAIR permits all joined participants to control playback",
         "operationId": "tv_post_party_sessions_id_commands",
         "security": [
           {
@@ -10725,7 +10725,7 @@
         "tags": [
           "TV and party"
         ],
-        "summary": "TV actual playback event and ordered command acknowledgment",
+        "summary": "TV actual playback report and explicit execution result; Go advances FAIR sessions once",
         "description": "Bind the reporting clock when a confirmed LOAD starts, before media readiness. PREPARING heartbeats every 15 seconds keep actualPlayedMs at zero and lastActivityAt null; ready media keeps the same clock anchor. An expired activity attempt cannot resume telemetry, but current-attempt ENDED/IDLE still synchronize terminal queue control without reviving history, actual counters, heat, recency or its lease.",
         "operationId": "tv_post_tv_sessions_id_playback_events",
         "security": [
@@ -10843,6 +10843,18 @@
                     "format": "int64",
                     "minimum": 0,
                     "description": "UTC epoch milliseconds of the last actual main-media playing activity in this snapshot, or null before playback starts. Advance only on actual playing time or a real resume; freeze during pause/buffering and across queued sends/retries. Recency and 24-hour protection use this occurrence time, not receipt time. Cannot exceed occurredAt (5000ms clock tolerance)."
+                  },
+                  "commandStatus": {
+                    "enum": [
+                      "EXECUTED",
+                      "FAILED"
+                    ]
+                  },
+                  "audioRole": {
+                    "enum": [
+                      "original",
+                      "backing"
+                    ]
                   }
                 },
                 "required": []
@@ -25104,6 +25116,901 @@
           }
         }
       }
+    },
+    "/api/v1/tv/sessions/{id}/capabilities": {
+      "post": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "Owning TV declares supported remote capabilities and enables Go FAIR scheduling",
+        "operationId": "tv_declare_party_capabilities",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Credential missing, expired or revoked"
+          },
+          "403": {
+            "description": "Not authorized for this device, party or action"
+          },
+          "409": {
+            "description": "Revision conflict or state does not allow operation"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "capabilities"
+                ],
+                "properties": {
+                  "capabilities": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "AUTO_ADVANCE",
+                        "SEEK",
+                        "AUDIO_ROLE",
+                        "APPLY_AUDIO_ROLES",
+                        "REACTIONS"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/party/sessions/{id}/reactions": {
+      "post": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "Send short lived TV effect; independent idempotency cursor and rate limits",
+        "operationId": "party_send_reaction",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    },
+                    "cursor": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Credential missing, expired or revoked"
+          },
+          "403": {
+            "description": "Not authorized for this device, party or action"
+          },
+          "409": {
+            "description": "Revision conflict or state does not allow operation"
+          },
+          "429": {
+            "description": "At most 3 per participant and 20 per session per second"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "requestId",
+                  "kind"
+                ],
+                "properties": {
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "enum": [
+                      "LIKE",
+                      "CLAP",
+                      "CHEER"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/party/library/artists": {
+      "get": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "List artists derived automatically from current effective song credits",
+        "operationId": "party_tv_get_tv_library_artists",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "page",
+                    "size",
+                    "totalElements"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ArtistProfile"
+                      }
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "size": {
+                      "type": "integer"
+                    },
+                    "totalElements": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Credential missing, expired or revoked"
+          },
+          "403": {
+            "description": "Not authorized for this device, party or action"
+          },
+          "409": {
+            "description": "Revision conflict or state does not allow operation"
+          }
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/party/library/artists/{id}/songs": {
+      "get": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "Songs for exact artist credit",
+        "operationId": "party_tv_get_tv_library_artists_id_songs",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Credential missing, expired or revoked"
+          },
+          "403": {
+            "description": "Not authorized for this device, party or action"
+          },
+          "409": {
+            "description": "Revision conflict or state does not allow operation"
+          }
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/party/library/artists/{id}": {
+      "get": {
+        "operationId": "party_getTvArtist",
+        "summary": "Current artist or unbound credit group; requires at least one current song",
+        "tags": [
+          "TV and party"
+        ],
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtistProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Artist or image missing"
+          },
+          "409": {
+            "description": "Profile, binding or image changed; refresh before retry"
+          }
+        }
+      }
+    },
+    "/api/v1/party/library/artists/{id}/images/{kind}": {
+      "get": {
+        "operationId": "party_getTvArtistImage",
+        "summary": "Read authenticated JPEG artist image; TV only reads active artists",
+        "tags": [
+          "TV and party"
+        ],
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "portrait",
+                "background"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Artist or image missing"
+          },
+          "409": {
+            "description": "Profile, binding or image changed; refresh before retry"
+          }
+        }
+      }
+    },
+    "/api/v1/party/favorites": {
+      "get": {
+        "operationId": "party_tvListFavorites",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Search NAS shared favorites before pagination",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Only device credentials accepted; party participants and admin Cookies rejected.",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "availability",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ALL",
+                "AVAILABLE",
+                "UNAVAILABLE"
+              ],
+              "default": "ALL"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "RECENT",
+                "TITLE",
+                "ARTIST"
+              ],
+              "default": "RECENT"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoritePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      },
+      "put": {
+        "operationId": "party_tvSetFavorites",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Atomically set explicit favorite state for 1–500 songs",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Only device credentials accepted; party participants and admin Cookies rejected. Idempotent desired state; retries do not change addedAt or revision. Removes only favorite relations, never songs or media. All IDs validated before committing. Response contains final complete IDs and revision.",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      }
+    },
+    "/api/v1/party/favorites/ids": {
+      "get": {
+        "operationId": "party_tvFavoriteIds",
+        "tags": [
+          "Favorites"
+        ],
+        "summary": "Read complete favorite IDs and revision",
+        "description": "One collection per NAS, shared by admin, mobile and TV. No client import or merge. Only device credentials accepted; party participants and admin Cookies rejected.",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authoritative NAS state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "CSRF or device authorization required"
+          },
+          "409": {
+            "description": "A requested new song no longer exists; whole batch unchanged"
+          }
+        }
+      }
+    },
+    "/api/v1/party/library/songs/{id}": {
+      "get": {
+        "operationId": "party_song_detail",
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "Current effective song metadata without source paths or credentials",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current song",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvSong"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or revoked identity"
+          },
+          "404": {
+            "description": "No applied cover"
+          }
+        }
+      }
+    },
+    "/api/v1/party/library/recent": {
+      "get": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "Distinct actually played songs, excluding admin previews and zero played time",
+        "operationId": "party_library_recent",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Credential missing, expired or revoked"
+          },
+          "403": {
+            "description": "Not authorized for this device, party or action"
+          },
+          "409": {
+            "description": "Revision conflict or state does not allow operation"
+          }
+        },
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "all"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "description": "Search effective saved title, artist and album, normalized full pinyin, initials (first dictionary reading), or exact parsed songCode. Shared immutable read index refreshed within 30 seconds or by TV home refresh. Filters run before server pagination. No automatic work/version merging."
+      }
+    },
+    "/api/v1/party/library/popular": {
+      "get": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "NAS popularity, excluding admin previews; default 30d, supports 7d/all",
+        "operationId": "party_library_popular",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Credential missing, expired or revoked"
+          },
+          "403": {
+            "description": "Not authorized for this device, party or action"
+          },
+          "409": {
+            "description": "Revision conflict or state does not allow operation"
+          }
+        },
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "7d",
+                "30d",
+                "all"
+              ],
+              "default": "30d"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "description": "Search effective saved title, artist and album, normalized full pinyin, initials (first dictionary reading), or exact parsed songCode. Shared immutable read index refreshed within 30 seconds or by TV home refresh. Filters run before server pagination. No automatic work/version merging."
+      }
+    },
+    "/api/v1/party/missing-song-feedback": {
+      "post": {
+        "operationId": "party_submit_missing_song",
+        "summary": "Idempotent missing-song feedback; server sets PARTY source and participant identity",
+        "description": "All original feedback fields are required; only title must be nonblank. The original request is immutable. Repeating the same UUID and original payload returns the existing request with 201; a different payload with the same ID returns 409. Source is always ADMIN. No download or client reporting is triggered.",
+        "security": [
+          {
+            "TvBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Obtain a current token from /api/v1/auth/csrf after login or session transitions."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartyMissingSongFeedbackCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created, or existing identical request returned after a retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissingSongFeedback"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid feedback fields or request UUID.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or CSRF rejected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request UUID was already used with different original feedback.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -28891,6 +29798,16 @@
           "revision": {
             "type": "string",
             "description": "Opaque effective display metadata revision, used to refresh artwork"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "lastPlayedAt": {
+            "type": "string"
+          },
+          "playCount": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "required": [
@@ -28928,6 +29845,13 @@
           },
           "song": {
             "$ref": "#/components/schemas/TvSong"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "priority": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -28969,6 +29893,16 @@
             "minimum": 1,
             "maximum": 86400000,
             "description": "Last known actual total duration of the current playback attempt on the original song timeline; omitted until the TV reports a valid duration."
+          },
+          "audioRole": {
+            "enum": [
+              "original",
+              "backing"
+            ]
+          },
+          "sampledAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -29027,6 +29961,25 @@
                 },
                 "playback": {
                   "$ref": "#/components/schemas/TvPlayback"
+                },
+                "requestId": {
+                  "type": "string"
+                },
+                "attemptId": {
+                  "type": "string"
+                },
+                "positionMs": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "role": {
+                  "enum": [
+                    "original",
+                    "backing"
+                  ]
+                },
+                "songId": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -29039,6 +29992,62 @@
             "type": "integer",
             "format": "int64",
             "description": "Monotonic persisted session revision, including playback events; clients discard lower revisions for the same session. Queue optimistic concurrency still uses revision."
+          },
+          "queuePolicy": {
+            "enum": [
+              "FAIR",
+              "LEGACY"
+            ]
+          },
+          "rotation": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priorityItemId": {
+            "type": "string"
+          },
+          "manualStopped": {
+            "type": "boolean"
+          },
+          "sampledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tvOnline": {
+            "type": "boolean"
+          },
+          "tvSeenAt": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "AUTO_ADVANCE",
+                "SEEK",
+                "AUDIO_ROLE",
+                "APPLY_AUDIO_ROLES",
+                "REACTIONS"
+              ]
+            }
+          },
+          "commandResults": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartyCommandResult"
+            }
+          },
+          "reactionCursor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartyReaction"
+            }
           }
         },
         "required": [
@@ -29071,7 +30080,12 @@
               "PAUSE",
               "RESUME",
               "RESTART",
-              "STOP"
+              "STOP",
+              "UNTOP",
+              "SHUFFLE",
+              "SEEK",
+              "AUDIO_ROLE",
+              "APPLY_AUDIO_ROLES"
             ]
           },
           "requestId": {
@@ -29091,13 +30105,28 @@
           },
           "participantId": {
             "type": "string"
+          },
+          "attemptId": {
+            "type": "string"
+          },
+          "positionMs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 86400000
+          },
+          "role": {
+            "enum": [
+              "original",
+              "backing"
+            ]
           }
         },
         "required": [
           "action",
-          "requestId",
-          "expectedRevision"
-        ]
+          "requestId"
+        ],
+        "description": "FAIR: queue mutations require expectedRevision; playback controls require the current attemptId. Receipt lookup precedes revision checks. See party-remote.md for authority and old-TV capability negotiation."
       },
       "TvPage": {
         "type": "object",
@@ -31691,7 +32720,8 @@
           "source": {
             "type": "string",
             "enum": [
-              "ADMIN"
+              "ADMIN",
+              "PARTY"
             ]
           },
           "status": {
@@ -34860,6 +35890,115 @@
           "revision": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "PartyCommandResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "attemptId",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "attemptId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "SENT",
+              "EXECUTED",
+              "FAILED"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "executedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "PartyReaction": {
+        "type": "object",
+        "required": [
+          "cursor",
+          "kind",
+          "expiresAt"
+        ],
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "enum": [
+              "LIKE",
+              "CLAP",
+              "CHEER"
+            ]
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "attemptId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PartyMissingSongFeedbackCreate": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "title"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable UUID reused for retries; the same ID with different normalized original feedback returns 409."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Nonblank after trimming; control characters are rejected."
+          },
+          "artist": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "May be empty; control characters are rejected."
+          },
+          "versionLabel": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "May be empty; control characters are rejected."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "May be empty; line breaks and tabs are allowed, other control characters are rejected."
           }
         }
       }

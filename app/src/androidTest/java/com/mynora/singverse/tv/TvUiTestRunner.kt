@@ -14,8 +14,11 @@ import androidx.activity.compose.setContent
 
 /** Replaces only the instrumented launch; this class is absent from production APKs. */
 class TvUiTestRunner : InstrumentationTestRunner() {
+    internal var launchArguments = Bundle()
+    override fun onCreate(arguments: Bundle?) { launchArguments = arguments ?: Bundle(); super.onCreate(arguments) }
     override fun newActivity(loader: ClassLoader, className: String, intent: Intent): Activity =
-        if (className == MainActivity::class.java.name && intent.getBooleanExtra("tv-login-fixture", false)) TvLoginFixtureActivity()
+        if (className == MainActivity::class.java.name && intent.hasExtra("party-go-origin")) TvPartyFixtureActivity()
+        else if (className == MainActivity::class.java.name && intent.getBooleanExtra("tv-login-fixture", false)) TvLoginFixtureActivity()
         else if (className == MainActivity::class.java.name && intent.hasExtra("tv-ui-fixture")) TvUiFixtureActivity()
         else super.newActivity(loader, className, intent)
 }
@@ -74,4 +77,26 @@ class TvUiFixtureActivity : ComponentActivity() {
         if (::app.isInitialized) app.close()
         super.onDestroy()
     }
+}
+
+/** Disposable real-Go integration: only included in the instrumentation APK. */
+class TvPartyFixtureActivity : ComponentActivity() {
+    lateinit var app: TvApp
+        private set
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val isolated = object : ContextWrapper(this) {
+            private val prefix = "tv-party-go-${java.util.UUID.randomUUID()}-"
+            override fun getApplicationContext(): Context = this
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = super.getSharedPreferences(prefix + name, mode)
+        }
+        app = TvApp(isolated).apply {
+            client.base = intent.getStringExtra("party-go-origin")!!
+            client.token = intent.getStringExtra("party-go-token")!!
+            address = client.base
+            connect()
+        }
+        setContent { SingVerseTvTheme { if (app.connected) TvScreen(app) else TvLoginScreen(app) } }
+    }
+    override fun onDestroy() { if (::app.isInitialized) app.close(); super.onDestroy() }
 }

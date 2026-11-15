@@ -265,6 +265,28 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private var resourceJob: Job? = null
     private var pendingLoadCommand = ""
     private var failedLoadCommand = ""
+    private val remoteResults = RemoteCommandResults()
+    private var remoteCommandId = ""
+    private var remoteCommandJob: Job? = null
+    private val reactionCursor = PartyReactionCursor()
+    internal var partyReactions by mutableStateOf(emptyList<PartyReaction>())
+        private set
+    var partyEffectsEnabled by mutableStateOf(playbackPreferences.getBoolean("party-effects", true))
+        private set
+    fun setPartyEffects(enabled: Boolean) {
+        partyEffectsEnabled = enabled
+        playbackPreferences.edit().putBoolean("party-effects", enabled).apply()
+        if (!enabled) partyReactions = emptyList()
+    }
+    fun removeReaction(cursor: Long) { partyReactions = partyReactions.filterNot { it.cursor == cursor } }
+    private fun receiveReactions(value: JSONObject) {
+        val attempt = value.optJSONObject("playback")?.optString("attemptId").orEmpty()
+        val events = value.optJSONArray("reactions")?.objects().orEmpty().map {
+            PartyReaction(it.optLong("cursor"), it.optString("kind"), it.optString("ownerName"), it.optString("attemptId"), it.optLong("expiresAt"))
+        }
+        val added = reactionCursor.accept(value.optString("id"), attempt, value.optLong("reactionCursor"), events, System.currentTimeMillis(), partyEffectsEnabled && foreground)
+        partyReactions = (partyReactions.filter { it.attemptId == attempt && it.expiresAt > System.currentTimeMillis() } + added).takeLast(12)
+    }
     private var lastLoadCommand: JSONObject? = null
     private var lastLoadSessionId = ""
     private var resumeAfterPreparation = true
@@ -398,7 +420,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             override fun onPlaybackStateChanged(state: Int) {
                 playerState = if (resourceChanging) "PREPARING" else if(player.playerError!=null) "ERROR" else when (state) { Player.STATE_BUFFERING -> "BUFFERING"; Player.STATE_ENDED -> "ENDED"; Player.STATE_READY -> if (player.isPlaying) "PLAYING" else "PAUSED"; else -> "IDLE" }
                 if (state == Player.STATE_ENDED) controlVisible = true
-                report(continueQueue = state == Player.STATE_ENDED && !resourceChanging)
+                report()
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying; if (player.playbackState == Player.STATE_READY) playerState = if (isPlaying) "PLAYING" else "PAUSED"; report() }
             override fun onPlayerError(exception: PlaybackException) {
@@ -418,7 +440,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         })
         if (client.token.isNotEmpty()) run { connect() }
         scope.launch { while (isActive) { delay(30000); if (connected && foreground && !sharedFavorites.loading) sharedFavorites.load() } }
-        scope.launch { while (isActive) { delay((2000L * (1 shl failureCount.coerceAtMost(3))).coerceAtMost(16000)); if (connected) refresh() } }
+        scope.launch { while (isActive) { delay((1000L * (1 shl failureCount.coerceAtMost(4))).coerceAtMost(16000)); if (connected) refresh() } }
         scope.launch { while (isActive) { delay(60000); if (connected && online && foreground) checkUpdate(manual = false) } }
         scope.launch { while (isActive) { delay(10000); val id=transcodeId;if(connected && id.isNotBlank()) runCatching { json("/api/v1/tv/transcoding/$id") } } }
         scope.launch { while (isActive) {
@@ -526,20 +548,34 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         val saved=json(path,"PUT",JSONObject().put("revision",current.getLong("revision")).put("originalId",if(original)selected.sourceId else other.sourceId).put("backingId",if(original)other.sourceId else selected.sourceId))
         playbackOptions.applyShared(saved)
     }
-    fun useAudioRole(original: Boolean) {
-        val generation = ++audioRoleGeneration
-        run { audioRoleLock.withLock {
-            if (generation != audioRoleGeneration) return@withLock
-            require(canUseAudioRole(original)) { "此歌曲没有可用的${if (original) "原唱" else "伴奏"}" }
-            requestedAudioRole = if (original) "original" else "backing"
-            if (playbackOptions.isRoleSelected(original)) return@withLock
-            if (playbackOptions.useRole(original)) {
-                return@withLock
-            }
+    fun useAudioRole(original: Boolean) { run { applyAudioRole(original) } }
+    private suspend fun applyAudioRole(original: Boolean) = audioRoleLock.withLock {
+        ++audioRoleGeneration
+        require(canUseAudioRole(original)) { "此歌曲没有可用的${if (original) "原唱" else "伴奏"}" }
+        requestedAudioRole = if (original) "original" else "backing"
+        if (!playbackOptions.isRoleSelected(original) && !playbackOptions.useRole(original)) {
             val role = if (original) playbackOptions.roleOriginal else playbackOptions.roleBacking
             require(!playbackOptions.isChannelRole(role)) { "此版本的本机声道标记已失效" }
             rebuildPlayback(followPosition = true)
-        } }
+        }
+    }
+    private suspend fun awaitPrepared(sessionId: String, attempt: String) {
+        val ready = withTimeoutOrNull(15000) {
+            while (true) {
+                check(snapshot.optString("id") == sessionId && snapshot.optJSONObject("playback")?.optString("attemptId") == attempt) { "播放实例已更换" }
+                player.playerError?.let { throw it }
+                if (!resourceChanging && loadedAttempt == attempt && player.playbackState == Player.STATE_READY) return@withTimeoutOrNull true
+                delay(50)
+            }
+            @Suppress("UNREACHABLE_CODE") false
+        }
+        check(ready == true) { "电视准备超时" }
+    }
+    private suspend fun seekRemote(targetMs: Long) {
+        check(hasConfirmedPlayback) { "歌曲尚未准备完成" }
+        val target = targetMs.coerceAtLeast(0)
+        val local = if (transcodeId.isBlank()) target else localPlaybackPosition(target, timelineOffset, player.duration, player.isCurrentMediaItemSeekable)
+        if (local != null) player.seekTo(local) else rebuildPlayback(startMs = target)
     }
     private suspend fun rebuildPlayback(force: Boolean = recovery.forceCompatibility, startMs: Long = position, followPosition: Boolean = false) {
         if (!hasConfirmedPlayback || snapshot.optString("status") != "ACTIVE") return
@@ -605,8 +641,17 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private fun acceptSnapshot(value: JSONObject, replaceSession: Boolean = false) {
         if(!replaceSession && snapshot.optString("id").isNotBlank() && value.optString("id")!=snapshot.optString("id"))return
         if(value.optString("id")==snapshot.optString("id") && value.has("stateRevision") && snapshot.has("stateRevision") && value.getLong("stateRevision")<snapshot.getLong("stateRevision"))return
-        if (value.optString("id") != snapshot.optString("id")) { pendingOperation = null; error = "" }
+        if (value.optString("id") != snapshot.optString("id")) {
+            pendingOperation = null; error = ""; remoteResults.clear(); remoteCommandJob?.cancel(); remoteCommandId = ""
+            reactionCursor.reset(); partyReactions = emptyList()
+        }
+        val previousAttempt = snapshot.optJSONObject("playback")?.optString("attemptId").orEmpty()
+        if (previousAttempt.isNotBlank() && previousAttempt != value.optJSONObject("playback")?.optString("attemptId")) {
+            remoteCommandJob?.cancel(); remoteCommandId = ""
+            resourceGeneration++; resourceJob?.cancel(); pendingLoadCommand = ""
+        }
         if (value.optString("id") != snapshot.optString("id") || value.optString("status") != "ACTIVE") clearPartyConnection()
+        receiveReactions(value)
         snapshot=value
     }
     private suspend fun json(path: String, method: String = "GET", body: JSONObject? = null): JSONObject {
@@ -634,6 +679,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             acceptSnapshot(json("/api/v1/tv/sessions/${snapshot.getString("id")}/recover", "POST"))
             page = "首页"
         }
+        declarePartyCapabilities()
         // Finish the required handshake before removing the login screen and its lifecycle.
         loadHome()
         login.recordSuccess(client.base, serverName)
@@ -642,6 +688,10 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         checkUpdate(manual = false, connection = true)
         ensureInvitation()
         run { loadSongs(); loadTags() }
+    }
+    private suspend fun declarePartyCapabilities() {
+        val sid = snapshot.getString("id")
+        acceptSnapshot(json("/api/v1/tv/sessions/$sid/capabilities", "POST", JSONObject().put("capabilities", JSONArray(listOf("AUTO_ADVANCE", "SEEK", "AUDIO_ROLE", "APPLY_AUDIO_ROLES", "REACTIONS")))))
     }
     suspend fun refresh() { try { val sid = snapshot.optString("id"); if (sid.isEmpty()) return; acceptSnapshot(json("/api/v1/tv/sessions/$sid/snapshot")); if(error.startsWith("与 NAS 同步失败"))error=""; val restored = !online; online = true; if (restored && foreground) checkUpdate(manual = false, connection = true); failureCount = 0; lastSync = android.os.SystemClock.elapsedRealtime(); if (foreground) { executeCommands(); ensureInvitation(); if (!participantsKnown || lastSync - lastParticipantsRefresh >= 5000) refreshParticipants(sid) }
         if (foreground && android.os.SystemClock.elapsedRealtime() - lastLibraryRefresh > 30000) {
@@ -662,7 +712,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                 }
             }
             lastLibraryRefresh = android.os.SystemClock.elapsedRealtime()
-        } } catch (e: Exception) { if (e is CancellationException) throw e; online = false; participantsKnown = false; failureCount++; if (e is TvHttpException && e.status == 401) { pauseLocal(); resetUpdates(); client.clear(); sharedFavorites.reset(); connected = false; clearPartyConnection(); login.open(LoginPage.METHODS); error = "" } else error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}" } }
+        } } catch (e: Exception) { if (e is CancellationException) throw e; online = false; reactionCursor.reset(); partyReactions = emptyList(); participantsKnown = false; failureCount++; if (e is TvHttpException && e.status == 401) { pauseLocal(); resetUpdates(); client.clear(); sharedFavorites.reset(); connected = false; clearPartyConnection(); login.open(LoginPage.METHODS); error = "" } else error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}" } }
     private suspend fun refreshParticipants(sid: String) {
         val generation = ++participantsGeneration
         val server = client.base; val credential = client.token
@@ -791,6 +841,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         check(pendingOperation == null) { "上次操作结果未知，请先核对或重试原请求" }
         val sessionId = snapshot.getString("id")
         val body = JSONObject().put("action", action).put("requestId", UUID.randomUUID().toString()).put("expectedRevision", snapshot.optLong("revision"))
+            .put("attemptId", snapshot.optJSONObject("playback")?.optString("attemptId").orEmpty())
         if (itemId != null) body.put("itemId", itemId)
         if (songId != null) body.put("songId", songId)
         if (participantId != null) body.put("participantId", participantId)
@@ -837,7 +888,12 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             val remembered = lastLoadCommand?.takeIf { lastLoadSessionId == snapshot.optString("id") && it.optJSONObject("playback")?.optString("attemptId") == playback.optString("attemptId") }
             check(pending || remembered != null) { "当前没有可重试的播放请求" }
             failedLoadCommand = ""
-            if (pending) executeCommands() else commandsLock.withLock {
+            if (remembered != null && resourceFailed) commandsLock.withLock {
+                // This explicit retry authorizes one new acquisition after a
+                // known failure, even if its failure acknowledgement is in flight.
+                remoteResults.forget(remembered.getString("id"))
+                prepareCommand(remembered, playback, snapshot.getString("id"))
+            } else if (pending) executeCommands() else commandsLock.withLock {
                 if (pendingLoadCommand.isBlank()) prepareCommand(remembered!!, playback, snapshot.getString("id"))
             }
         }
@@ -874,6 +930,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         if (snapshot.optString("id") != sessionId || snapshot.optString("status") != "ACTIVE" ||
             snapshot.optJSONObject("playback")?.optString("attemptId") != playback.optString("attemptId") ||
             !playback.optBoolean("confirmed")) return
+        remoteCommandJob?.cancel(); remoteCommandId = ""
         resourceGeneration++; resourceJob?.cancel(); audioRoleGeneration++
         releaseExecution()
         playbackClock.sample(false)
@@ -891,7 +948,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         recovery.reset()
         currentSong = snapshot.optJSONArray("queue")?.objects()?.firstOrNull { it.optJSONObject("song")?.optString("id") == songId }?.optJSONObject("song")
         playbackMedia = JSONObject(); observedVideo = false; observedAudio = false; selectedAudioFormat = null; embeddedCues = emptyList()
-        requestedAudioRole = ""; backingResource = ""; timelineOffset = 0; sourceDuration = 0
+        requestedAudioRole = playback.optString("audioRole"); backingResource = ""; timelineOffset = 0; sourceDuration = 0
         resourceChanging = true; resourceFailed = false
         playerState = "PREPARING"; error = ""; page = "演唱"; controlVisible = true
         reportingAttempt = attempt
@@ -911,6 +968,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                 resource.optJSONObject("audioRoles")?.let { playbackOptions.applyShared(it) }
                 resourceChanging = false
                 player.prepare(); player.playWhenReady = resumeAfterPreparation && foreground; controlVisible = !player.playWhenReady
+                awaitPrepared(sessionId, attempt)
                 scope.launch { loadText(songId) }
                 scope.launch {
                     runCatching { json("/api/v1/tv/library/songs/$songId") }.getOrNull()?.let {
@@ -921,36 +979,106 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                 if (e is CancellationException) throw e
                 failedLoadCommand = commandId
                 resourceChanging = false; resourceFailed = true
+                remoteResults.record(commandId, false)
+                if (generation == currentSongGeneration && pendingLoadCommand == commandId) pendingLoadCommand = ""
                 playbackFailed(e.message ?: "播放准备失败，请重试")
+                runCatching { acknowledgeCommand(sessionId, commandId, false) }
                 return@launch
             } finally {
-                if (pendingLoadCommand == commandId) pendingLoadCommand = ""
+                if (generation == currentSongGeneration && pendingLoadCommand == commandId) pendingLoadCommand = ""
             }
             // A failed acknowledgement is retried by the next snapshot without preparing media again.
-            runCatching { acceptSnapshot(json("/api/v1/tv/sessions/$sessionId/playback-events", "POST", JSONObject().put("commandId", commandId))) }
+            remoteResults.record(commandId, true)
+            runCatching { acknowledgeCommand(sessionId, commandId, true) }
         }
+    }
+    private suspend fun acknowledgeCommand(sessionId: String, commandId: String, success: Boolean) {
+        acceptSnapshot(json("/api/v1/tv/sessions/$sessionId/playback-events", "POST", JSONObject().put("commandId", commandId).put("commandStatus", if (success) "EXECUTED" else "FAILED")))
     }
     private suspend fun executeCommands() = commandsLock.withLock {
         val sessionId = snapshot.getString("id")
         for (c in snapshot.optJSONArray("commands")?.objects().orEmpty()) {
             if (snapshot.optString("id") != sessionId) return@withLock
+            val commandId = c.getString("id")
+            val knownResult = remoteResults.result(commandId)
+            if (knownResult != null) { acknowledgeCommand(sessionId, commandId, knownResult); continue }
             val action = c.getString("action")
             val p = c.optJSONObject("playback")
-            if (action == "LOAD" || action == "RESTART") {
-                if (p?.optString("attemptId") != snapshot.optJSONObject("playback")?.optString("attemptId")) continue
-                if (p != null && loadedAttempt != p.getString("attemptId")) {
-                    if (pendingLoadCommand != c.getString("id") && failedLoadCommand != c.getString("id")) prepareCommand(c, p, sessionId)
-                    continue
-                }
-            } else when (action) {
-                "PAUSE" -> { resumeAfterPreparation = false; player.pause() }
-                "RESUME" -> { resumeAfterPreparation = true; if (foreground && loadedAttempt.isNotBlank()) player.play() }
-                "STOP" -> { stopLocal(); loadedAttempt = ""; playerState = "IDLE" }
+            val attempt = c.optString("attemptId", p?.optString("attemptId").orEmpty())
+            val bound = snapshot.optString("queuePolicy") == "FAIR" || action in listOf("LOAD", "RESTART")
+            if (bound && attempt.isNotBlank() && attempt != snapshot.optJSONObject("playback")?.optString("attemptId")) {
+                remoteResults.record(commandId, false); acknowledgeCommand(sessionId, commandId, false); continue
             }
-            acceptSnapshot(json("/api/v1/tv/sessions/$sessionId/playback-events", "POST", JSONObject().put("commandId", c.getString("id"))))
+            // Transport intent applies while LOAD/seek/role resources are still
+            // preparing. Keep LOAD's own result pending until actual readiness.
+            if (action in listOf("PAUSE", "RESUME", "STOP")) {
+                val success = try {
+                    when (action) {
+                        "PAUSE" -> { resumeAfterPreparation = false; player.pause(); if (reportingAttempt.isNotBlank()) playerState = "PAUSED" }
+                        "RESUME" -> { check(foreground) { "电视当前不在前台" }; resumeAfterPreparation = true; if (loadedAttempt.isNotBlank()) player.play() else if (reportingAttempt.isNotBlank()) playerState = "PREPARING" }
+                        "STOP" -> { remoteCommandJob?.cancel(); remoteCommandId = ""; stopLocal(); loadedAttempt = ""; playerState = "IDLE" }
+                    }
+                    true
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    error = e.message ?: "遥控执行失败"
+                    false
+                }
+                remoteResults.record(commandId, success)
+                acknowledgeCommand(sessionId, commandId, success)
+                report()
+                if (action == "STOP") return@withLock
+                continue
+            }
+            if (pendingLoadCommand.isNotBlank() || remoteCommandId.isNotBlank()) continue
+            if (action == "LOAD" || action == "RESTART") {
+                if (p != null && loadedAttempt != p.optString("attemptId")) {
+                    if (failedLoadCommand != commandId) prepareCommand(c, p, sessionId)
+                    return@withLock
+                }
+                remoteResults.record(commandId, true); acknowledgeCommand(sessionId, commandId, true)
+                continue
+            }
+            // Resource acquisition may take a minute. Keep the 1s snapshot/presence loop free.
+            remoteCommandId = commandId
+            remoteCommandJob = scope.launch {
+                var success = false
+                try {
+                    check(snapshot.optString("id") == sessionId && snapshot.optJSONObject("playback")?.optString("attemptId") == attempt) { "播放实例已更换" }
+                    when (action) {
+                        "SEEK" -> { seekRemote(c.getLong("positionMs")); awaitPrepared(sessionId, attempt) }
+                        "AUDIO_ROLE" -> {
+                            applyAudioRole(c.getString("role") == "original")
+                            awaitPrepared(sessionId, attempt)
+                            check(withTimeoutOrNull(3000) { while (!playbackOptions.isRoleSelected(c.getString("role") == "original")) delay(50); true } == true) { "音轨切换未生效" }
+                        }
+                        "APPLY_AUDIO_ROLES" -> audioRoleLock.withLock {
+                            check(hasConfirmedPlayback) { "歌曲尚未准备完成" }
+                            val song = snapshot.getJSONObject("playback").getString("songId")
+                            check(song == c.getString("songId")) { "歌曲已更换" }
+                            val shared = json("/api/v1/tv/audio-roles/songs/$song")
+                            check(snapshot.optJSONObject("playback")?.optString("attemptId") == attempt) { "播放实例已更换" }
+                            playbackOptions.applyShared(shared)
+                            rebuildPlayback(followPosition = true)
+                            awaitPrepared(sessionId, attempt)
+                        }
+                        else -> error("电视不支持此命令")
+                    }
+                    success = true
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    error = e.message ?: "遥控执行失败"
+                } finally {
+                    if (remoteCommandId == commandId) remoteCommandId = ""
+                }
+                remoteResults.record(commandId, success)
+                runCatching { acknowledgeCommand(sessionId, commandId, success) }
+                report()
+            }
+            return@withLock
         }
     }
-    fun report(continueQueue: Boolean = false) {
+    fun report() {
         val clock = playbackClock.sample(actuallyPlaying())
         if (!connected || !shouldReportPlaybackActivity(reportingAttempt, expiredReportAttempt, playerState)) return
         lastPlaybackReportAt = SystemClock.elapsedRealtime()
@@ -958,7 +1086,6 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         val generation = playbackLifecycleGeneration
         val connection = client.credentials()
         val connectionGeneration = client.connectionGeneration
-        val mayContinue = continueQueue && foreground && online && hasConfirmedPlayback && pendingOperation == null
         val attempt = reportingAttempt; val sequence = ++seq; val state = playerState
         val pos = if (loadedAttempt == attempt) player.currentPosition.coerceAtLeast(0) + timelineOffset else 0
         val playback = snapshot.optJSONObject("playback")
@@ -974,6 +1101,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             .put("startedAt", playbackClock.startedAtEpochMs).put("occurredAt", playbackClock.occurredAtEpochMs)
         playbackClock.lastActivityAtEpochMs?.let { event.put("lastActivityAt", it) }
         durationMs?.let { event.put("durationMs", it) }
+        if (activeAudioRole in listOf("original", "backing")) event.put("audioRole", activeAudioRole)
         scope.launch {
             val response = try {
                 JSONObject(client.request("/api/v1/tv/sessions/$sessionId/playback-events", "POST", event, connection))
@@ -983,24 +1111,10 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                     client.connectionGeneration == connectionGeneration && snapshot.optString("id") == sessionId) expiredReportAttempt = attempt
                 return@launch
             }
-            if (!mayContinue || state != "ENDED" || !foreground || !connected || !online ||
-                generation != playbackLifecycleGeneration || connectionGeneration != client.connectionGeneration ||
+            if (!connected || generation != playbackLifecycleGeneration || connectionGeneration != client.connectionGeneration ||
                 connection != client.credentials() || snapshot.optString("id") != sessionId) return@launch
             acceptSnapshot(response)
-            // Finish any in-flight LOAD acknowledgement or remote control before deciding to continue.
-            this@TvApp.run {
-                executeCommands()
-                val playback = snapshot.optJSONObject("playback")
-                if (foreground && connected && online && generation == playbackLifecycleGeneration &&
-                    snapshot.optString("id") == sessionId && snapshot.optString("status") == "ACTIVE" &&
-                    loadedAttempt == attempt && playerState == "ENDED" && pendingOperation == null &&
-                    playback?.optString("attemptId") == attempt && playback.optBoolean("confirmed") &&
-                    playback.optString("state") == "ENDED" &&
-                    snapshot.optJSONArray("queue")?.objects().orEmpty().any { it.optString("status") == "WAITING" }) {
-                    // START preserves the completed item; NEXT would mark it skipped.
-                    sendCommand("START")
-                }
-            }
+            if (foreground) this@TvApp.run { executeCommands() }
         }
     }
     private fun actuallyPlaying() = loadedAttempt.isNotBlank() && hasConfirmedPlayback && foreground &&
@@ -1020,7 +1134,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         }
     }
     fun foreground() { foreground = true;refreshFavorites();playbackOptions.refreshRoutes();resumeUpdateInstallation();if(connected){reconnect();checkUpdate(manual = false)} }
-    fun background() { playbackLifecycleGeneration++; foreground = false; login.pausePairing(); pauseLocal() }
+    fun background() { playbackLifecycleGeneration++; reactionCursor.reset(); partyReactions = emptyList(); foreground = false; login.pausePairing(); pauseLocal() }
     fun pauseLocal() { resumeAfterPreparation = false; player.pause(); report() }
     fun stopLocal() {
         playbackLifecycleGeneration++; resourceGeneration++; audioRoleGeneration++
@@ -1063,6 +1177,6 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         lastParticipantsRefresh = 0
     }
     fun disconnect() { sharedFavorites.reset(); currentSongGeneration++; currentSong=null; playbackMedia=JSONObject(); observedVideo=false; observedAudio=false; selectedAudioFormat=null; embeddedCues=emptyList(); login.open(LoginPage.METHODS);playlistGeneration++;playlistDetail=null;playlists=emptyList();playlistPage=0;playlistQuery="";playlistTotal=0;lastPlaylistId=""; stopLocal();loadedAttempt="";pendingOperation=null;resetUpdates();online=false; client.clear(); sharedFavorites.reset(); connected = false; login.cancel(); snapshot = JSONObject(); clearPartyConnection(); artistDetail=null;artistDetailGeneration++;lastArtistId=""; selected = null; homeSongs = emptyList(); homeAppearance = JSONObject(); homePlaylists = emptyList(); songs = emptyList(); artists = emptyList(); tags = emptyList(); participants = emptyList(); homeTotal = 0; artistTotal = 0; total = 0; query = ""; artistQuery = ""; number = 0; artistPage = 0; artistId = ""; selectedTags = emptySet(); unclassified = false; requestGeneration++; artistGeneration++; detailGeneration++ }
-    fun newSession() = run { acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession=true); ensureInvitation() }
+    fun newSession() = run { acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession=true); declarePartyCapabilities(); ensureInvitation() }
     fun close() { resetUpdates(); releasePlaybackHistory(); login.close(); resourceGeneration++; releaseExecution(); discovery.stop(); playbackOptions.close(); scope.cancel(); player.release() }
 }

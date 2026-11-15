@@ -57,7 +57,10 @@ private val PlaybackSettingTabs = listOf(
                     "音轨" -> audioTrackSettings(app)
                     "歌词字幕" -> textTrackSettings(app)
                     "声音输出" -> outputSettings(app)
-                    "同步" -> synchronizationSettings(app, audioOnly)
+                    "同步" -> {
+                        item("party:effects") { Action("亲友全屏互动特效：${if(app.partyEffectsEnabled) "开启" else "关闭"}", Modifier.fillMaxWidth(), focusKey = "playback:party:effects") { app.setPartyEffects(!app.partyEffectsEnabled) } }
+                        synchronizationSettings(app, audioOnly)
+                    }
                 }
             }
         }

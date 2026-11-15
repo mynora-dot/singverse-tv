@@ -69,6 +69,7 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
     }
 
     fun testNaturalCompletionContinuesAudioAndVideoQueueAndStopsWhenEmpty() {
+        playback.serverAutoAdvance = true
         start("test-song-1", next = "test-song-2")
         onMain { app.command("ADD", songId = "test-song-3") }
         waitFor("三首歌曲已入队") { onMain { queuedSongCount(app) == 3 && app.pendingOperation == null } }
@@ -80,7 +81,7 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
                 onMain { app.player.seekTo(app.player.duration - 700) }
                 if (index == 0) {
                     waitFor("自然结束响应暂缓，准备重复回报") { playback.heldEndedResponse != null }
-                    onMain { repeat(3) { app.report(continueQueue = true) } }
+                    onMain { repeat(3) { app.report() } }
                     waitFor("重复结束事件均已到达服务端") { playback.playbackEvents.count { it.optString("state") == "ENDED" } >= 4 }
                 }
             } finally {
@@ -93,8 +94,8 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
                         app.playing && app.pendingOperation == null
                 }
             }
-            assertEquals("自然结束只START一次，不能用NEXT跳过已完成歌曲",
-                List(index + 1) { "START" }, fixture.actions.drop(commandIndex))
+            assertEquals("续播由服务端推进，TV不能再次START或NEXT",
+                emptyList<String>(), fixture.actions.drop(commandIndex))
             assertEquals("刚播完的歌曲必须保留已唱状态", "COMPLETED",
                 onMain { app.snapshot.getJSONArray("queue").getJSONObject(index).getString("status") })
             assertNull("自动续播不能弹出确认框", onMain { app.pendingConfirm })
@@ -104,9 +105,9 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         waitFor("空队列保持演唱结束") {
             onMain { app.playerState == "ENDED" && app.snapshot.getJSONArray("queue").objects().all { it.optString("status") == "COMPLETED" } }
         }
-        onMain { repeat(3) { app.report(continueQueue = true) } }
+        onMain { repeat(3) { app.report() } }
         SystemClock.sleep(1200)
-        assertEquals("空队列和重复结束回报不能再启动歌曲", listOf("START", "START"), fixture.actions.drop(commandIndex))
+        assertEquals("空队列和重复结束回报不能再启动歌曲", emptyList<String>(), fixture.actions.drop(commandIndex))
         assertEquals("每首歌只加载一次", listOf("test-song-1", "test-song-2", "test-song-3"), playback.resourceRequests.map { it.getString("songId") })
         assertTrue("每次资源请求都必须已确认", playback.unconfirmedResourceRequests.isEmpty())
         waitFor("播完后保留可操作的遥控焦点") { focused().contains(":action:player:") }
@@ -114,24 +115,24 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
     }
 
     fun testLateCompletionCannotStartRemoteHandoff() {
+        playback.serverAutoAdvance = true
         start("test-song-1", next = "test-song-2")
         val starts = fixture.actions.count { it == "START" }
+        val oldAttempt = onMain { app.snapshot.getJSONObject("playback").getString("attemptId") }
         playback.holdEndedResponse = true
         try {
             onMain { app.player.seekTo(app.player.duration - 700) }
-            waitFor("服务端已收到自然结束，暂缓响应") { playback.heldEndedResponse != null }
-            playback.remoteNext()
+            waitFor("服务端已推进下一首，暂缓结束响应") { playback.heldEndedResponse != null }
+            playback.remoteNextIfCurrent(oldAttempt)
             onMain { app.reconnect() }
-            waitFor("远程切歌已处理为待确认交接") {
-                onMain { app.snapshot.optJSONObject("playback")?.optString("songId") == "test-song-2" && app.playerState == "IDLE" }
+            waitFor("快照让真实播放器加载已确认的下一首", 20000) {
+                onMain { app.snapshot.optJSONObject("playback")?.optString("songId") == "test-song-2" && app.playing }
             }
-        } finally {
-            playback.releaseEndedResponse()
-        }
+        } finally { playback.releaseEndedResponse() }
         SystemClock.sleep(1200)
-        assertEquals("迟到的结束响应不能确认远程交接", starts, fixture.actions.count { it == "START" })
-        assertFalse("远程交接仍待电视确认", onMain { app.snapshot.getJSONObject("playback").getBoolean("confirmed") })
-        assertEquals("不能擅自加载下一首", 1, playback.resourceRequests.size)
+        assertEquals("迟到的结束响应不能重复START", starts, fixture.actions.count { it == "START" })
+        assertTrue("服务端已确认自动衔接", onMain { app.snapshot.getJSONObject("playback").getBoolean("confirmed") })
+        assertEquals("下一首只加载一次", 1, playback.resourceRequests.count { it.optString("songId") == "test-song-2" })
     }
 
     fun testPauseAndLocalStopDoNotContinueQueue() {
@@ -169,6 +170,7 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         waitFor("同实例恢复播放") { playback.playbackEvents.lastOrNull()?.optString("state") == "PLAYING" }
         assertEquals(attempt, playback.playbackEvents.last().getString("attemptId"))
         assertTrue(playback.playbackEvents.filter { it.optString("attemptId") == attempt }
+            .sortedBy { it.getLong("eventSeq") } // Concurrent HTTP arrival may differ; Go also orders by eventSeq.
             .zipWithNext().all { (first, second) -> second.getLong("actualPlayedMs") >= first.getLong("actualPlayedMs") })
     }
 
@@ -294,9 +296,11 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         waitFor("音频播放器返回首页") { onMain { app.page == "首页" } && focused() == "首页:nav:首页" }
         key(KeyEvent.KEYCODE_DPAD_RIGHT)
         key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitFor("遥控经过共享收藏入口") { onMain { app.page == "收藏" } && focused() == "收藏:nav:收藏" }
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
         waitFor("遥控右键直接打开完整待唱队列") { onMain { app.page == "已点" } && focused() == "已点:nav:已点" }
         assertWaitingQueueSong("测试双音轨视频", "test-song-2", "test-song-1")
-        screenshot("tv-queue-cover-no-owner").recycle()
+        screenshot("tv-queue-cover-with-owner").recycle()
     }
 
     fun testVideoNativeAudioRolesAndDirectNextSong() {
@@ -507,6 +511,7 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
     }
 
     fun testExpiredTelemetryStillCompletesAndContinuesTheQueue() {
+        playback.serverAutoAdvance = true
         start("test-song-1", next = "test-song-2")
         val expired = onMain { app.snapshot.getJSONObject("playback").getString("attemptId") }
         playback.expiredActivityAttempts.add(expired)
@@ -565,6 +570,30 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
             onMain { app.hasConfirmedPlayback && app.player.playbackState == Player.STATE_READY && !app.player.playWhenReady && !app.playing }
         }
         assertEquals("暂停不能重复协商同一资源", 1, playback.resourceRequests.size)
+    }
+
+    fun testFairPauseDuringPreparationDoesNotAcknowledgeLoadBeforeReady() {
+        playback.fairAcknowledgements = true
+        playback.holdResourceResponse = true
+        onMain { app.command("ADD", songId = "test-song-1") }
+        waitFor("歌曲已入队") { onMain { app.pendingOperation == null && queuedSongCount(app) == 1 } }
+        try {
+            onMain { app.command("START") }
+            waitFor("FAIR等待资源") { playback.heldResourceResponse != null }
+            val load = onMain { app.snapshot.getJSONArray("commands").getJSONObject(0).getString("id") }
+            playback.remotePause()
+            onMain { app.reconnect() }
+            waitFor("暂停立即执行，LOAD仍等待准备完成", 3000) {
+                onMain {
+                    val commands = app.snapshot.optJSONArray("commands")
+                    app.playerState == "PAUSED" && commands?.length() == 1 && commands.getJSONObject(0).getString("id") == load
+                } && playback.playbackEvents.any { it.has("commandId") && it.optString("commandId") != load && it.optString("commandStatus") == "EXECUTED" }
+            }
+        } finally { playback.holdResourceResponse = false; playback.releaseResourceResponse() }
+        waitFor("FAIR准备完成后才确认LOAD且保持暂停", 15000) {
+            onMain { app.hasConfirmedPlayback && app.player.playbackState == Player.STATE_READY && !app.player.playWhenReady && !app.playing && app.snapshot.optJSONArray("commands")?.length() == 0 }
+        }
+        assertEquals(1, playback.resourceRequests.size)
     }
 
     fun testFailedResourceCanRetryAfterPauseAcknowledgedTheLoadCommand() {
@@ -821,8 +850,8 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         val row = nodes().firstOrNull { it.isVisibleToUser && it.isClickable && label(it).contains(title) }
         assertNotNull("下一首应有真实可操作待唱行", row)
         assertTrue("待唱编号从01开始，歌名歌手来自真实歌曲", label(row!!).contains("01") && label(row).contains("合成测试信号"))
-        assertFalse("个人队列不展示点歌人表头", visibleText("点歌人"))
-        assertFalse("个人队列不展示fixture的点歌人", visibleText("播放器验收测试") || visibleText("测试电视"))
+        assertFalse("点歌人直接展示在歌曲行内，不增加表头", visibleText("点歌人"))
+        assertTrue("共享队列展示每首歌的点歌人", visibleText("播放器验收测试"))
         val rowBounds = Rect(); row.getBoundsInScreen(rowBounds)
         val covers = nodes().filter { it.isVisibleToUser && it.contentDescription?.toString() == "歌曲封面" }.filter {
             val bounds = Rect(); it.getBoundsInScreen(bounds)

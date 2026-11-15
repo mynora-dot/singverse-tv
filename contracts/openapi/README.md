@@ -110,7 +110,7 @@ WebDAV 使用保存的地址和加密凭据在服务端发起 GET/HEAD，转发 
 
 `/tv/**` 和 `/party/**` 只接受 Authorization Bearer，不接受管理员 Cookie。这两个独立命名空间不使用 CSRF；管理端继续 Cookie + CSRF。亲友邀请预览使用 POST 读取以避免令牌进入 URL 访问日志，预览不加入；显式 join 获得十二小时参与凭据，昵称不决定权限。邀请有效一小时，刷新使旧邀请失效，散场失效全部参与授权。
 
-聚会变更包含 requestId、expectedRevision；同主体同请求与载荷重试不重复入队，冲突 409 后先刷新。revision 是用户操作修订号，播放遥测有独立数据库 CAS 与 eventSeq，不让周期进度报告制造点歌冲突。NEXT 进入待确认交接，START 仅电视可执行；播放事件才使队列变为 PLAYING。电视进程重建调用 recover，失效旧播放实例、清理命令，将进行项放回待唱，不自动重播。
+聚会 v2 详见 [亲友点歌与 TV 遥控](../party-remote.md)。队列变更包含 requestId、expectedRevision；同主体同请求与载荷重试不重复入队，冲突 409 后先刷新。revision 是队列修订号，播放遥测有独立数据库 CAS 与 eventSeq。声明 AUTO_ADVANCE 的 TV 使用 Go 公平轮唱与自动 LOAD，所有加入者可遥控，播放动作绑定 attemptId；未声明能力的旧 TV 保持 NEXT 待确认、START 电视确认的兼容路径。电视进程重建 recover 仍失效旧播放实例并保持停止。
 
 `POST /tv/sessions/{id}/playback-events` 可选 `durationMs`（1～86400000，原歌曲时间轴总时长，HLS 包含 offset），未知时省略。只接受当前 attempt 的递增 eventSeq；已确认且实际 `PLAYING`、有效进度大于零并进入最后 30 秒时，服务端在事务提交后预取首个 `WAITING` 队列项的 WebDAV 原片。同一播放实例、同一下一首只登记一次，不因每条进度重复创建预取，不触发转码或新增播放命令。TV 和扫码 H5 的队列排序、移除、清空以及 NEXT、STOP、END、recover、设备撤销会使旧预取引用失效；STOP 提交时撤销，无须等待电视回报 IDLE。旧响应、重复事件和预取失败不会改变队列或当前播放；手机单曲没有自动建立队列。 后台暂态失败总共最多尝试 3 次，前两次失败后分别等待 5 秒、10 秒；稳定的参数、权限、素材变化或容量错误停止。新前台请求优先 2 秒，之后前台媒体连接仍打开时预取限为 256KiB/s，前台连接结束后恢复常速；前台优先暂停不计失败。
 

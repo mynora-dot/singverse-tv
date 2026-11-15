@@ -16,6 +16,8 @@ import kotlin.math.sin
 internal class TvPlaybackFixture(videoBytes: ByteArray) {
     /** Set before START only in the generated-accompaniment case; default songs stay unchanged. */
     @Volatile var generatedBacking = false
+    @Volatile var serverAutoAdvance = false
+    @Volatile var fairAcknowledgements = false
     val unavailableResourceSongs = ConcurrentHashMap.newKeySet<String>()
     @Volatile var holdNextResponse = false
     @Volatile var heldNextResponse: String? = null
@@ -41,6 +43,8 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
     )
     private val queue = mutableListOf<JSONObject>()
     private val commands = mutableListOf<JSONObject>()
+    private val favoriteIds = linkedSetOf<String>()
+    private var favoriteRevision = 0L
     private var current: JSONObject? = null
     private var revision = 1L
     private var lastEvent = -1L
@@ -71,9 +75,11 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
 
     /** Simulates another authorized controller; the app learns this state through real HTTP refresh. */
     @Synchronized fun remoteNext() { next(); revision++ }
+    @Synchronized fun remoteNextIfCurrent(attempt: String) { if (current?.optString("attemptId") == attempt) { next(); revision++ } }
     @Synchronized fun remotePause() { enqueue("PAUSE"); revision++ }
 
     @Synchronized fun snapshot(): JSONObject = TvUiFixture.snapshot()
+        .put("queuePolicy", if (fairAcknowledgements) "FAIR" else "LEGACY")
         .put("queue", JSONArray(queue.map { JSONObject(it.toString()) }))
         .put("commands", JSONArray(commands.map { JSONObject(it.toString()) }))
         .put("revision", revision).put("stateRevision", revision)
@@ -81,6 +87,21 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
 
     /** Null delegates unrelated endpoints, including real dynamic invitation rendering, to TvUiFixture. */
     @Synchronized fun response(path: String, body: JSONObject): String? = when {
+        path == "/api/v1/tv/favorites" -> {
+            if (body.has("selected")) {
+                var changed = false
+                val ids = body.getJSONArray("songIds")
+                repeat(ids.length()) { index ->
+                    val id = ids.getString(index)
+                    changed = (if (body.getBoolean("selected")) favoriteIds.add(id) else favoriteIds.remove(id)) || changed
+                }
+                if (changed) favoriteRevision++
+                JSONObject().put("songIds", JSONArray(favoriteIds.toList())).put("revision", favoriteRevision).toString()
+            } else {
+                val selected = songs().filter { it.getString("id") in favoriteIds }
+                JSONObject().put("items", JSONArray(selected)).put("totalElements", selected.size).put("revision", favoriteRevision).toString()
+            }
+        }
         path == "/api/v1/tv/playback-resources" -> {
             resourceRequests.add(JSONObject(body.toString()))
             if (current?.optBoolean("confirmed") != true) unconfirmedResourceRequests.add(JSONObject(body.toString()))
@@ -104,7 +125,10 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
             }
             if (body.has("commandId")) {
                 val index = commands.indexOfFirst { it.optString("id") == body.getString("commandId") }
-                if (index >= 0) repeat(index + 1) { commands.removeAt(0) }
+                if (index >= 0) {
+                    if (fairAcknowledgements) commands.removeAt(index)
+                    else repeat(index + 1) { commands.removeAt(0) }
+                }
             }
             val play = current
             if (play != null && body.optString("attemptId") == play.optString("attemptId") && body.optLong("eventSeq", -1) > lastEvent) {
@@ -118,6 +142,9 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
                     else -> null
                 }
                 if (status != null) queue.firstOrNull { it.optString("id") == play.optString("itemId") }?.put("status", status)
+                if (serverAutoAdvance && body.optString("state") == "ENDED" && queue.any { it.optString("status") == "WAITING" }) {
+                    commands.clear(); handoff(true); enqueue("LOAD")
+                }
             }
             revision++
             snapshot().toString()
