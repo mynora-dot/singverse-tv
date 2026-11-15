@@ -69,6 +69,9 @@ class TvUiFixtureActivity : ComponentActivity() {
             total = homeTotal
             homeAppearance = TvUiFixture.appearance()
             ensureInvitation()
+            // Exercise the same HTTP readers as a connected TV instead of filling home state directly.
+            refreshFavorites()
+            refreshHomeActivity()
         }
         setContent { SingVerseTvTheme { TvScreen(app, focusMemory) } }
     }

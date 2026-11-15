@@ -37,6 +37,22 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
     @Volatile var rejectTvLogin = false
     @Volatile var requireLoginMfa = false
     @Volatile var sessionId = "ui-test-session"
+    @Volatile var homeFavoritesCount = 4
+    @Volatile var homeHistoryCount = 3
+    @Volatile var homePopularCount = 4
+    @Volatile var homeSongOffset = 0
+    @Volatile var unavailableSongIds: Set<String> = emptySet()
+    @Volatile var favoritesDelayMs = 0L
+    @Volatile var homeHistoryDelayMs = 0L
+    @Volatile var homePopularDelayMs = 0L
+    // Persistent outages remain active through automatic foreground/snapshot refreshes.
+    @Volatile var favoritesFailureStatus = 0
+    @Volatile var homeHistoryFailureStatus = 0
+    @Volatile var homePopularFailureStatus = 0
+    val failNextFavorites = AtomicInteger()
+    val failNextHomeHistory = AtomicInteger()
+    val failNextHomePopular = AtomicInteger()
+    val homeActivityRequests = CopyOnWriteArrayList<String>()
     val rejectNextAdd = AtomicInteger()
     val failNextAddResponse = AtomicInteger()
     private val clients = ConcurrentHashMap.newKeySet<Socket>()
@@ -47,6 +63,8 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
     private val queue = JSONArray()
     private var revision = 1L
     private val addReceipts = mutableSetOf<String>()
+    private var favoriteSelection: Set<String>? = null
+    private var favoriteRevision = 1L
     private val covers = (1..20).associateWith(::coverPng)
     private val worker = thread(name = "tv-ui-fixture", isDaemon = true) {
         while (!socket.isClosed) {
@@ -95,11 +113,25 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
                 val adding = path.endsWith("/commands") && jsonBody.optString("action") == "ADD"
                 if (path.endsWith("/commands")) commandRequests.add(JSONObject(jsonBody.toString()))
                 if (adding && addDelayMs > 0) Thread.sleep(addDelayMs)
+                val homeDelay = when (path) {
+                    "/api/v1/tv/favorites" -> favoritesDelayMs
+                    "/api/v1/party/library/recent" -> homeHistoryDelayMs
+                    "/api/v1/party/library/popular" -> homePopularDelayMs
+                    else -> 0L
+                }
+                if (homeDelay > 0) Thread.sleep(homeDelay)
                 var responseStatus = 200
                 val bytes = if (media != null) media.first else if (coverNumber != null) covers.getValue(coverNumber)
                     else try {
                         val rejection = if (adding) rejectNextAdd.getAndSet(0) else 0
                         if (rejection > 0) throw TvFixtureHttpException(rejection, "测试：本场已暂停接单")
+                        val homeFailure = when (path) {
+                            "/api/v1/tv/favorites" -> favoritesFailureStatus.takeIf { it > 0 } ?: failNextFavorites.getAndSet(0)
+                            "/api/v1/party/library/recent" -> homeHistoryFailureStatus.takeIf { it > 0 } ?: failNextHomeHistory.getAndSet(0)
+                            "/api/v1/party/library/popular" -> homePopularFailureStatus.takeIf { it > 0 } ?: failNextHomePopular.getAndSet(0)
+                            else -> 0
+                        }
+                        if (homeFailure > 0) throw TvFixtureHttpException(homeFailure, "测试：首页内容暂时无法读取")
                         response(path, jsonBody, request.getOrElse(1) { path }).also {
                             playback?.beforeSend(path, jsonBody, it)
                             val failure = if (adding) failNextAddResponse.getAndSet(0) else 0
@@ -172,6 +204,39 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
         path.endsWith("/snapshot") || path.endsWith("/recover") || path == "/api/v1/tv/sessions" -> currentSnapshot().toString()
         path == "/api/v1/tv/home" -> JSONObject().put("recentSongs", JSONArray(songs())).put("totalSongs", 20)
             .put("server", JSONObject().put("name", "UI 验收测试服务")).put("appearance", appearance()).put("featuredPlaylists", JSONArray(playlists())).toString()
+        path == "/api/v1/tv/favorites" -> {
+            val defaults = songs(songCount, mixedSongMetadata).drop(homeSongOffset).take(homeFavoritesCount).map { it.getString("id") }.toSet()
+            if (body.has("selected")) {
+                val ids = body.getJSONArray("songIds").let { values -> (0 until values.length()).map(values::getString).toSet() }
+                val before = favoriteSelection ?: defaults
+                val after = if (body.getBoolean("selected")) before + ids else before - ids
+                if (before != after) favoriteRevision++
+                favoriteSelection = after
+                JSONObject().put("songIds", JSONArray(after.toList())).put("revision", favoriteRevision).toString()
+            } else {
+                val selected = songs(songCount, mixedSongMetadata).filter { it.getString("id") in (favoriteSelection ?: defaults) }
+                    .map { it.put("available", it.getString("id") !in unavailableSongIds) }
+                val page = android.net.Uri.parse(requestTarget).getQueryParameter("page")?.toIntOrNull() ?: 0
+                JSONObject().put("items", JSONArray(selected.drop(page * 100).take(100)))
+                    .put("totalElements", selected.size).put("revision", favoriteRevision).toString()
+            }
+        }
+        path == "/api/v1/party/library/recent" || path == "/api/v1/party/library/popular" -> {
+            homeActivityRequests.add(requestTarget)
+            val recent = path.endsWith("/recent")
+            val parameters = android.net.Uri.parse(requestTarget)
+            val page = parameters.getQueryParameter("page")?.toIntOrNull() ?: 0
+            val size = parameters.getQueryParameter("size")?.toIntOrNull() ?: 20
+            val count = if (recent) homeHistoryCount else homePopularCount
+            val offset = homeSongOffset + if (recent) 4 else 7
+            val date = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+            val rows = songs(songCount, mixedSongMetadata).drop(offset).take(count).mapIndexed { index, song ->
+                song.put("available", song.getString("id") !in unavailableSongIds).put("lastPlayedAt", date.format(java.util.Date(System.currentTimeMillis() - index * 86_400_000L)))
+                    .also { if (!recent) it.put("playCount", 12 - index).put("effectivePlayCount", 12 - index) }
+            }
+            JSONObject().put("items", JSONArray(rows.drop(page * size).take(size))).put("totalElements", rows.size)
+                .put("page", page).put("size", size).toString()
+        }
         path.matches(Regex("/api/v1/tv/library/songs/test-song-\\d+")) -> songs(songCount, mixedSongMetadata).first { it.optString("id") == path.substringAfterLast('/') }.toString()
         path == "/api/v1/tv/library/songs" || path == "/api/v1/tv/library/artists/test-artist/songs" || path == "/api/v1/tv/library/playlists/test-playlist/songs" -> {
             songRequests.add(requestTarget)

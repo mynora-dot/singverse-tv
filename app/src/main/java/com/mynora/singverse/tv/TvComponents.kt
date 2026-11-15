@@ -254,7 +254,8 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
 }
 
 @Composable internal fun SongArtwork(app: TvApp, song: JSONObject?, modifier: Modifier,
-    contentScale: androidx.compose.ui.layout.ContentScale = androidx.compose.ui.layout.ContentScale.Crop) {
+    contentScale: androidx.compose.ui.layout.ContentScale = androidx.compose.ui.layout.ContentScale.Crop,
+    shape: Shape = TvShape.card) {
     val server = app.client.base
     val path = song?.optString("coverPath").orEmpty()
     val revision = song?.optString("revision").orEmpty()
@@ -266,7 +267,7 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
             throw cancelled
         } catch (_: Exception) { null }
     }
-    Box(modifier.clip(TvShape.card).background(Brush.linearGradient(listOf(Color(0xFF343434), Color(0xFF171717))))) {
+    Box(modifier.clip(shape).background(Brush.linearGradient(listOf(Color(0xFF343434), Color(0xFF171717))))) {
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), "歌曲封面", Modifier.fillMaxSize(), contentScale = contentScale)
         else MusicMark(Modifier.size(32.dp).align(Alignment.Center))
     }

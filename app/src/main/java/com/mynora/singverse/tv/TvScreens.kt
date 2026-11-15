@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.key.*
@@ -129,6 +130,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
 
 @Composable private fun ConnectedTvContent(app: TvApp, memory: TvFocusMemory, view: String) {
     var invitationOpen by remember { mutableStateOf(false) }
+    var homeSearchOpen by remember { mutableStateOf(false) }
     val librarySongs = rememberLazyListState()
     val playlistsGrid = rememberLazyGridState()
     val playlistSongs = rememberLazyListState()
@@ -136,18 +138,33 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
     val categoriesGrid = rememberLazyGridState()
     var categoryDimension by remember { mutableStateOf("LANGUAGE") }
     val artistSongs = rememberLazyListState()
-    val homeLibrary = rememberLazyListState()
+    val historySongs = rememberLazyListState()
+    val popularSongs = rememberLazyListState()
     var handledSongListReset by remember { mutableIntStateOf(app.songListResetVersion) }
     val homeFocus = remember { FocusRequester() }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
-    val selectedNavigation = if (app.selected != null || app.page in listOf("找歌", "歌手", "分类", "歌单", "点歌")) "点歌" else app.page
+    val selectedNavigation = when {
+        app.page in listOf("历史记录", "热门歌曲") -> "首页"
+        app.selected != null || app.page in listOf("找歌", "歌手", "分类", "歌单", "点歌") -> "点歌"
+        else -> app.page
+    }
+    val activityFocusItems = when (app.page) {
+        "首页" -> app.favoriteSongs().take(4) + app.homeHistorySongs.take(3) + app.homePopularSongs.take(4)
+        "历史记录" -> app.homeHistorySongs
+        "热门歌曲" -> app.homePopularSongs
+        else -> emptyList()
+    }.map { it.optString("id") to it.optBoolean("available", true) }
     fun selectNavigation(destination: String) {
         if (app.page == destination && app.selected == null && app.artistDetail == null && app.playlistDetail == null) return
         // Selecting a tab must keep focus in the navigation, even if its page remembers content focus.
         memory.last[destination] = "nav:$destination"
+        homeSearchOpen = false
         app.navigate(destination)
     }
-    LaunchedEffect(app.connected, view, memory.restoreVersion, windowFocused, app.songListResetVersion) {
+    LaunchedEffect(app.connected, app.page) {
+        if (!app.connected || app.page !in listOf("首页", "找歌")) homeSearchOpen = false
+    }
+    LaunchedEffect(app.connected, view, memory.restoreVersion, windowFocused, app.songListResetVersion, activityFocusItems) {
         if (app.connected && memory.activeDialogs == 0 && windowFocused) {
             val navigation = "nav:$selectedNavigation"
             if (app.page == selectedNavigation && memory.last[view] == navigation && memory.focusedTargets.singleOrNull() == "$view:$navigation") {
@@ -175,13 +192,10 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             val target = memory.last[view].orEmpty()
             if (app.selected == null) {
                 val id = target.substringAfter(':', "")
-                if (app.page == "首页" && target.startsWith("song:")) {
-                    val index = app.homeSongs.indexOfFirst { it.optString("id") == id }
-                    if (index >= 0) {
-                        val layout = homeLibrary.layoutInfo
-                        val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
-                        if (item == null || item.offset < layout.viewportStartOffset || item.offset + item.size > layout.viewportEndOffset) homeLibrary.scrollToItem(index)
-                    }
+                if ((app.page == "历史记录" && target.startsWith("history:")) || (app.page == "热门歌曲" && target.startsWith("popular:"))) {
+                    val (state, items) = if (app.page == "历史记录") historySongs to app.homeHistorySongs else popularSongs to app.homePopularSongs
+                    val index = items.indexOfFirst { it.optString("id") == id }
+                    if (index >= 0) state.scrollToItem(index)
                 } else if (songList != null && target.startsWith("song:")) {
                     var index = app.songs.indexOfFirst { it.optString("id") == id }
                     if (index < 0 && app.songs.isNotEmpty()) {
@@ -237,6 +251,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             app.artistDetail != null -> app.closeArtist()
             app.page == "演唱" && app.controlVisible -> app.controlVisible = false
             app.page == "找歌" && app.categoryResults -> app.navigate("分类")
+            app.page == "找歌" && homeSearchOpen -> { homeSearchOpen = false; app.navigate("首页") }
             app.page in listOf("找歌", "歌手", "分类", "歌单") -> app.navigate("点歌")
             app.page != "首页" -> app.navigate("首页")
             else -> app.pendingConfirm = "退出演唱"
@@ -250,16 +265,25 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
         when {
             !app.connected -> TvLoginScreen(app)
             app.page == "演唱" -> PlayerScreen(app)
-            else -> Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            else -> Column(Modifier.fillMaxSize().padding(
+                if (app.page == "首页") PaddingValues(start = 36.dp, end = 36.dp, top = 33.dp, bottom = 32.dp)
+                else PaddingValues(horizontal = 24.dp, vertical = 12.dp)),
+                verticalArrangement = Arrangement.spacedBy(if (app.page == "首页") 6.dp else 10.dp)) {
                 Row(Modifier.fillMaxWidth().height(34.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HomeGlyph("brand", Modifier.size(21.dp), Primary)
-                        Text("SingVerse", color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+                        HomeGlyph("brand", Modifier.size(if (app.page == "首页") 29.dp else 21.dp), Primary)
+                        Text("SingVerse", color = Paper, fontSize = if (app.page == "首页") 18.sp else 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(Modifier.padding(start = if (app.page == "首页") 40.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         listOf("首页", "点歌", "收藏", "已点", "设置").forEach { page ->
                             TvNavigation(if (page == "已点") "已点 ${queuedSongCount(app)}" else page,
                                 (if (page == selectedNavigation) Modifier.focusRequester(homeFocus) else Modifier).tvFocusTarget("nav:$page")
+                                    .focusProperties {
+                                        if (app.page == "首页" && page == "首页") {
+                                            val first = app.favoriteSongs().take(4).firstOrNull { it.optBoolean("available", true) }?.optString("id")
+                                            down = memory.targets["$view:${if (first == null) "favorites:all" else "favorite:$first"}"] ?: FocusRequester.Default
+                                        }
+                                    }
                                     .onFocusChanged { if (it.isFocused && memory.directionalInput && memory.activeDialogs == 0) selectNavigation(page) },
                                 selected = selectedNavigation == page) { selectNavigation(page) }
                         }
@@ -273,7 +297,9 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                     else if (app.playlistDetail != null) PlaylistDetail(app, playlistSongs)
                     else if (app.artistDetail != null) ArtistDetail(app, artistSongs)
                     else when (app.page) {
-                        "首页" -> TvHomeScreen(app, homeLibrary) { if (!app.online) app.reconnect(); app.ensureInvitation(); invitationOpen = true }
+                        "首页" -> TvHomeScreen(app, onSearch = { homeSearchOpen = true; app.navigate("找歌") }) { if (!app.online) app.reconnect(); app.ensureInvitation(); invitationOpen = true }
+                        "历史记录" -> TvHomeActivityScreen(app, popular = false, state = historySongs)
+                        "热门歌曲" -> TvHomeActivityScreen(app, popular = true, state = popularSongs)
                         "点歌" -> SongCenter(app)
                         "找歌" -> Library(app, librarySongs)
                         "歌单" -> Playlists(app, playlistsGrid)
@@ -284,7 +310,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                         "设置" -> Settings(app)
                     }
                 }
-                if (app.page != "已点") SingingBar(app)
+                if (app.page != "已点") SingingBar(app, compact = app.page == "首页")
             }
         }
     }
@@ -455,19 +481,22 @@ private fun librarySummary(app: TvApp): String {
     }
 }
 
-@Composable private fun SingingBar(app: TvApp) {
+@Composable private fun SingingBar(app: TvApp, compact: Boolean = false) {
     val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" }
     val next = queue.firstOrNull { it.optString("status") == "HANDOFF" } ?: queue.firstOrNull { it.optString("status") == "WAITING" }
     val song = (current ?: next)?.optJSONObject("song")
-    Row(Modifier.fillMaxWidth().height(56.dp).background(Panel.copy(alpha = .9f), TvShape.card)
-        .border(1.dp, Hairline.copy(alpha = .45f), TvShape.card).padding(horizontal = 14.dp, vertical = 7.dp),
+    val buttonSize = if (compact) Modifier.height(26.dp) else Modifier
+    Row(Modifier.fillMaxWidth().height(if (compact) 30.dp else 56.dp).background(if (compact) Color.Transparent else Panel.copy(alpha = .9f), TvShape.card)
+        .then(if (compact) Modifier.drawBehind { drawLine(Hairline.copy(alpha = .6f), androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, 0f), 1.dp.toPx()) } else Modifier)
+        .then(if (compact) Modifier else Modifier.border(1.dp, Hairline.copy(alpha = .45f), TvShape.card))
+        .padding(horizontal = if (compact) 0.dp else 14.dp, vertical = if (compact) 2.dp else 7.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SongArtwork(app, song, Modifier.size(40.dp))
+        if (!compact) SongArtwork(app, song, Modifier.size(40.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(if (song == null) "今晚，唱你喜欢的歌" else song.optString("title"), color = Paper, fontSize = 14.sp, lineHeight = 19.sp,
+            Text(if (song == null && compact) "方向键选择   确认点歌   返回上页" else if (song == null) "今晚，唱你喜欢的歌" else song.optString("title") + if (compact) " · ${if (current != null) stateLabel(app.playerState) else "等待确认开唱"}" else "", color = if (compact && song == null) Muted else Paper, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 19.sp,
                 fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(when {
+            if (!compact) Text(when {
                 app.snapshot.optString("status") == "ENDED" -> "聚会已结束"
                 current != null -> "${song?.artists()} · ${stateLabel(app.playerState)}"
                 next != null -> "${song?.artists()} · 等待确认开唱"
@@ -475,12 +504,12 @@ private fun librarySummary(app: TvApp): String {
             }, color = if (current != null) Success.copy(alpha = .9f) else Muted, fontSize = 11.sp, lineHeight = 15.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (!app.online) HomeButton("网络异常 · 重连", focusKey = "bar:reconnect") { app.reconnect() }
-        HomeButton("已点歌曲 (${queuedSongCount(app)})", focusKey = "bar:queue") { app.navigate("已点") }
+        if (!app.online) HomeButton("网络异常 · 重连", buttonSize, focusKey = "bar:reconnect") { app.reconnect() }
+        HomeButton("已点歌曲 (${queuedSongCount(app)})", buttonSize, focusKey = "bar:queue") { app.navigate("已点") }
         when {
-            app.snapshot.optString("status") == "ENDED" -> HomeButton("开始新聚会", primary = true, focusKey = "bar:session") { app.newSession() }
-            current == null && next != null -> HomeButton("确认开唱", primary = true, focusKey = "bar:start") { app.command("START") }
-            current != null || app.snapshot.optJSONObject("playback")?.optString("songId").orEmpty().isNotEmpty() -> HomeButton("返回演唱", primary = current != null, focusKey = "bar:sing") { app.page = "演唱" }
+            app.snapshot.optString("status") == "ENDED" -> HomeButton("开始新聚会", buttonSize, primary = true, focusKey = "bar:session") { app.newSession() }
+            current == null && next != null -> HomeButton("确认开唱", buttonSize, primary = true, focusKey = "bar:start") { app.command("START") }
+            current != null || app.snapshot.optJSONObject("playback")?.optString("songId").orEmpty().isNotEmpty() -> HomeButton("返回演唱", buttonSize, primary = current != null, focusKey = "bar:sing") { app.page = "演唱" }
         }
     }
 }
@@ -490,8 +519,11 @@ private fun librarySummary(app: TvApp): String {
         val size = minOf(constraints.maxWidth, constraints.maxHeight).coerceAtLeast(1)
         val bitmap = remember(value, size) { runCatching {
             val matrix = MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, size, size, mapOf(EncodeHintType.ERROR_CORRECTION to "M"))
+            val pixels = IntArray(matrix.width * matrix.height) { index ->
+                if (matrix[index % matrix.width, index / matrix.width]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            }
             Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565).apply {
-                for (x in 0 until matrix.width) for (y in 0 until matrix.height) setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+                setPixels(pixels, 0, matrix.width, 0, 0, matrix.width, matrix.height)
             }
         }.getOrNull() }
         if (bitmap != null) Image(bitmap.asImageBitmap(), description, Modifier.fillMaxSize(), filterQuality = FilterQuality.None)
