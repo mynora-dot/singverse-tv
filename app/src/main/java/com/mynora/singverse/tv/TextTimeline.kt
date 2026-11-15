@@ -8,6 +8,11 @@ data class TextLine(val start: Long, val end: Long, val text: String, val words:
 }
 object TextTimeline {
     private val stamp = Regex("(\\d{1,3}):(\\d{2})(?:[.,](\\d{1,3}))?")
+    private val offsetStamp = Regex("\\[offset:([+-]?\\d+)\\]", RegexOption.IGNORE_CASE)
+    private val lineStamp = Regex("\\[(\\d{1,3}:\\d{2}(?:[.,]\\d{1,3})?)\\]")
+    private val wordStamp = Regex("<(\\d{1,3}:\\d{2}(?:[.,]\\d{1,3})?)>([^<]*)")
+    private val markup = Regex("<[^>]*>")
+    private val blockSeparator = Regex("\n\\s*\n")
     fun timestamp(raw: String): Long {
         val parts = raw.trim().split(':')
         if (parts.size == 3) return parts[0].toLong() * 3600000 + timestamp(parts.drop(1).joinToString(":"))
@@ -20,28 +25,28 @@ object TextTimeline {
         val normalizedFormat = format.trim().lowercase(java.util.Locale.ROOT)
         val text = raw.removePrefix("\uFEFF").replace("\r", "")
         if (normalizedFormat == "lrc") {
-            val offset = Regex("\\[offset:([+-]?\\d+)\\]", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toLongOrNull()?.coerceIn(-600000, 600000) ?: 0
+            val offset = offsetStamp.find(text)?.groupValues?.get(1)?.toLongOrNull()?.coerceIn(-600000, 600000) ?: 0
             val lines = mutableListOf<TextLine>()
             for (line in text.lines()) {
-                val stamps = Regex("\\[(\\d{1,3}:\\d{2}(?:[.,]\\d{1,3})?)\\]").findAll(line).toList()
+                val stamps = lineStamp.findAll(line).toList()
                 if (stamps.isEmpty()) continue
                 val content = line.substring(stamps.last().range.last + 1)
-                val words = Regex("<(\\d{1,3}:\\d{2}(?:[.,]\\d{1,3})?)>([^<]*)").findAll(content).mapNotNull { word -> runCatching { TimedWord(timestamp(word.groupValues[1]) + offset, word.groupValues[2]) }.getOrNull() }.toList()
-                val clean = content.replace(Regex("<[^>]*>"), "")
+                val words = wordStamp.findAll(content).mapNotNull { word -> runCatching { TimedWord(timestamp(word.groupValues[1]) + offset, word.groupValues[2]) }.getOrNull() }.toList()
+                val clean = content.replace(markup, "")
                 for (m in stamps) runCatching { timestamp(m.groupValues[1]) }.getOrNull()?.let { time -> lines.add(TextLine((time + offset).coerceAtLeast(0), Long.MAX_VALUE, clean, words)) }
             }
             val sorted = lines.sortedBy { it.start }
             return sorted.mapIndexed { i, l -> l.copy(end = sorted.getOrNull(i + 1)?.start ?: Long.MAX_VALUE) }
         }
         require(normalizedFormat == "srt" || normalizedFormat == "vtt")
-        return text.split(Regex("\n\\s*\n")).mapNotNull { block ->
+        return text.split(blockSeparator).mapNotNull { block ->
             val lines = block.lines(); val index = lines.indexOfFirst { "-->" in it }
             if (index < 0) return@mapNotNull null
             runCatching {
                 val times = lines[index].split("-->")
                 val start = timestamp(times[0]); val end = timestamp(times[1].trim().substringBefore(' '))
                 require(end > start)
-                TextLine(start, end, lines.drop(index + 1).joinToString("\n").replace(Regex("<[^>]*>"), ""))
+                TextLine(start, end, lines.drop(index + 1).joinToString("\n").replace(markup, ""))
             }.getOrNull()
         }.sortedBy { it.start }
     }
