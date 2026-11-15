@@ -6,7 +6,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.net.HttpURLConnection
 import java.net.URI
 
 class TvHttpException(val status: Int, message: String) : java.io.IOException(message)
@@ -15,6 +14,7 @@ class TvClient(context: Context) {
     private val covers = object : android.util.LruCache<String, android.graphics.Bitmap>(16 * 1024 * 1024) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.allocationByteCount
     }
+    private val imageRequests = TvImageRequests(covers::get)
     private val preferences = context.getSharedPreferences("nas", Context.MODE_PRIVATE)
     private val credentialCipher = TvCredentialCipher(context, preferences)
     @Volatile var base: String = preferences.getString("base", "") ?: ""
@@ -36,39 +36,34 @@ class TvClient(context: Context) {
         currentCoroutineContext().ensureActive()
         synchronized(this) {
             check(generation == connectionGeneration) { "NAS 连接已更换，请重新登录" }
-            if (base != uri.toString()) covers.evictAll()
+            imageRequests.clear(); covers.evictAll()
             connectionGeneration++
             base = uri.toString(); token = credential
             preferences.edit().putString("base", base).putString("token", encrypted).apply()
         }
     }
-    @Synchronized fun clear() { connectionGeneration++; covers.evictAll(); token = ""; preferences.edit().remove("token").apply() }
+    @Synchronized fun clear() { connectionGeneration++; imageRequests.clear(); covers.evictAll(); token = ""; preferences.edit().remove("token").apply() }
     suspend fun image(path: String, revision: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
-        val (address, credential) = credentials()
-        val key=address+path+"@"+revision
-        covers.get(key)?.let { return@withContext it }
+        val (address, credential, generation) = synchronized(this@TvClient) { Triple(base, token, connectionGeneration) }
+        val key="$generation:$address$path@$revision"
         if (!path.startsWith("/api/v1/tv/home/banners/") && !path.startsWith("/api/v1/tv/library/songs/") && !path.startsWith("/api/v1/tv/library/classification-tags/") && !path.startsWith("/api/v1/tv/library/artists/")) return@withContext null
-        val connection = URI(address + path).toURL().openConnection() as HttpURLConnection
-        try {
-            connection.connectTimeout = 3000; connection.readTimeout = 5000; connection.instanceFollowRedirects = false
-            connection.setRequestProperty("Authorization", "Bearer $credential")
-            if (connection.responseCode != 200) return@withContext null
-            val bytes = connection.inputStream.use { it.readBytesBounded(2_000_000) }
+        imageRequests.load(key) {
+            val bytes = TvImageTransport.read(address, credential, path) ?: return@load null
+            currentCoroutineContext().ensureActive()
             val options=android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds=true }
             android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,options)
-            if(options.outWidth<=0 || options.outHeight<=0)return@withContext null
+            if(options.outWidth<=0 || options.outHeight<=0)return@load null
             options.inSampleSize=1
             val limit=if(path.startsWith("/api/v1/tv/home/banners/") || path.startsWith("/api/v1/tv/library/classification-tags/") || path.startsWith("/api/v1/tv/library/artists/"))1280 else 512
             while(maxOf(options.outWidth/options.inSampleSize,options.outHeight/options.inSampleSize)>limit)options.inSampleSize*=2
             options.inJustDecodeBounds=false
-            if (base != address || token != credential) return@withContext null
-            android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,options)?.also { covers.put(key,it) }
-        } finally { connection.disconnect() }
-    }
-    private fun java.io.InputStream.readBytesBounded(limit: Int): ByteArray {
-        val out = java.io.ByteArrayOutputStream(); val chunk = ByteArray(8192)
-        while (true) { val count = read(chunk); if (count < 0) break; require(out.size() + count <= limit) { "服务响应过大" }; out.write(chunk, 0, count) }
-        return out.toByteArray()
+            currentCoroutineContext().ensureActive()
+            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,options)
+            currentCoroutineContext().ensureActive()
+            synchronized(this@TvClient) {
+                if (connectionGeneration != generation) null else bitmap?.also { covers.put(key,it) }
+            }
+        }
     }
     suspend fun request(path: String, method: String = "GET", body: JSONObject? = null, connection: Pair<String, String> = credentials()): String = withContext(Dispatchers.IO) {
         require(path.startsWith("/api/v1/"))
