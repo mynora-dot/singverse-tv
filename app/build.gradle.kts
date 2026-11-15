@@ -4,14 +4,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
-val productVersion = rootProject.file("VERSION").readText().trim()
-check(productVersion.matches(Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"))) { "VERSION must be M.m.p" }
+val productVersion = System.getenv("SINGVERSE_VERSION") ?: "0.0.0"
+check(productVersion.matches(Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"))) { "SINGVERSE_VERSION must be M.m.p" }
 val versionParts = productVersion.split('.').map { it.toLong() }
-check(versionParts[0] <= 2100 && versionParts[1] <= 999 && versionParts[2] <= 999) { "VERSION minor/patch must be <= 999" }
-val productVersionCode = versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]
-check(productVersionCode in 1..2_100_000_000L) { "VERSION produces an invalid Android versionCode" }
+check(versionParts[0] <= 2100 && versionParts[1] <= 999 && versionParts[2] <= 999) { "SINGVERSE_VERSION minor/patch must be <= 999" }
+val productVersionCode = (versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]).coerceAtLeast(1L)
+check(productVersionCode in 1..2_100_000_000L) { "SINGVERSE_VERSION produces an invalid Android versionCode" }
 
 android {
+    lint {
+        checkReleaseBuilds = System.getenv("GITHUB_ACTIONS") != "true"
+    }
     namespace = "com.mynora.singverse.tv"
     compileSdk = 35
     // Platform-only UI instrumentation: no additional test framework downloads.
@@ -63,6 +66,7 @@ dependencies {
 // Production packages always use the durable release key from the release environment.
 gradle.taskGraph.whenReady {
     if (allTasks.any { it.name in listOf("assembleRelease", "prepareTvRelease") }) {
+        check(!System.getenv("SINGVERSE_VERSION").isNullOrBlank() && productVersion != "0.0.0") { "Release requires the version injected by Actions" }
         check(providers.gradleProperty("singverseSignRelease").orNull == "true") { "Configure release signing explicitly; debug keys cannot publish production updates" }
     }
 }

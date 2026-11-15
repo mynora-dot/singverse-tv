@@ -1,6 +1,6 @@
 # Android 客户端发行与更新契约
 
-手机仓库包名 com.mynora.singverse.mobile、minSdk 24；TV 包名 com.mynora.singverse.tv、minSdk 21（Android 5.0，包含 Android 5.1 / API 22）。每仓根 VERSION 独立维护，正式标签 v{VERSION}。versionCode = major × 1000000 + minor × 1000 + patch，minor/patch 不超过999，结果为1–2100000000，且高于上一正式包。正式签名证书持续一致，不使用 debug 签名发布。TV APK 保留 Android 5 所需的 v1 签名及 armeabi-v7a 支持；若无原生库可标记 universal。
+手机仓库包名 com.mynora.singverse.mobile、minSdk 24；TV 包名 com.mynora.singverse.tv、minSdk 21（Android 5.0，包含 Android 5.1 / API 22）。各仓通过 GitHub 正式 Release 标签 vMAJOR.MINOR.PATCH 独立管理版本，Actions 注入 SINGVERSE_VERSION，不维护源码 VERSION 文件。versionCode = major × 1000000 + minor × 1000 + patch，minor/patch 不超过999，结果为1–2100000000，且高于上一正式包。正式签名证书持续一致，不使用 debug 签名发布。TV APK 保留 Android 5 所需的 v1 签名及 armeabi-v7a 支持；若无原生库可标记 universal。
 
 ## 发行资产
 
@@ -10,7 +10,7 @@ SHA256SUMS 使用标准 sha256sum 两空格格式，覆盖 APK 与 release.json�
 
 ## 管理平台组装
 
-Go components.json 固定前端 Release 标签；新构建对手机和TV分别读取一次 Latest 正式 Release，拒绝草稿、预发布与非稳定语义版本。记录 repository、releaseId、tag、所有 assetId、大小、SHA-256 和 APK 元数据到 components.lock.json。架构构建共用这些输入；发布重试复用锁及已验收 OCI 归档。固定标签不得替换内容。
+Go components.json 指定前端、手机和TV的仓库；新构建分别读取一次 Latest 正式 Release（可为组件显式设置 tag），拒绝草稿、预发布与非稳定语义版本。记录 repository、releaseId、tag、所有 assetId、大小、SHA-256 和 APK 元数据到 components.lock.json。架构构建共用这些输入；发布重试复用锁及 OCI 归档。固定标签不得替换内容。
 
 业务镜像只读 releases/mobile 和 releases/tv 提供包；运行期间不访问 GitHub。显式 SINGVERSE_TV_RELEASE_DIRECTORY 旧配置继续由原电视接口处理，新的通用下载接口要求完整元数据。未配置或未打包时返回 available:false，配置损坏时返回503。
 

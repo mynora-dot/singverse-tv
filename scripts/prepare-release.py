@@ -4,19 +4,23 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import shutil
 import subprocess
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from build_version import build_version
+
 
 def version_code(version):
     if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
-        raise ValueError("VERSION must be major.minor.patch")
+        raise ValueError("SINGVERSE_VERSION must be major.minor.patch")
     major, minor, patch = map(int, version.split("."))
     code = major * 1000000 + minor * 1000 + patch
     if minor > 999 or patch > 999 or not 1 <= code <= 2100000000:
-        raise ValueError("VERSION is outside Android versionCode range")
+        raise ValueError("SINGVERSE_VERSION is outside Android versionCode range")
     return code
 
 
@@ -29,7 +33,7 @@ def main():
     parser.add_argument("--notes", type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    version = (root / "VERSION").read_text().strip()
+    version = build_version(required=True)
     code = version_code(version)
     tools = args.build_tools
     if tools is None:
@@ -50,7 +54,7 @@ def main():
     certificates = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]+)$", signer, re.M)
     expected = "com.mynora.singverse." + args.platform
     if not package or package.group(1) != expected or int(package.group(2)) != code or package.group(3) != version:
-        raise SystemExit("APK package/version differs from VERSION")
+        raise SystemExit("APK package/version differs from the Actions release version")
     minimum = 24 if args.platform == "mobile" else 21
     if not sdk or int(sdk.group(1)) != minimum:
         raise SystemExit("APK minSdk differs from platform contract")

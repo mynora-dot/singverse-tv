@@ -6,8 +6,8 @@
       "sha256": "a7e4c0e825a6e84e8b5c6668b0f9828e86e6316ca7eb50767b8728316f4307f2"
     },
     "contracts/client-updates.md": {
-      "sha256": "ed360d78f2e81d479adc9388790e91a07947390d2bceda09c51004567a300bfe",
-      "revision": "dc3efba8deeac4d11322823545bef2c95a49bb33"
+      "sha256": "5c903416b3ed2fc29752ef1fe7ff9a9094e87055df51a49b58b3d878a825cb49",
+      "revision": "f73c4c570dd653008ba988cc12a8b1c176d05549"
     },
     "contracts/frontend-hosting.md": {
       "sha256": "af1d30e1ebbabd766df669302609c6129245befb7ec875452c384acc2d2474ba"

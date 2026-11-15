@@ -4,11 +4,15 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 import re
 import subprocess
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from build_version import release_version
 
 ROOT = Path(__file__).resolve().parents[1]
 HEX = re.compile(r"[a-f0-9]{64}")
@@ -91,7 +95,7 @@ def check_metadata(metadata, version, platform="tv"):
 
 def release_plan(version, tag, releases, candidate=None, read_asset=None, platform="tv"):
     if tag != "v" + version:
-        raise ValueError("Release tag must equal v + root VERSION")
+        raise ValueError("Release tag must equal v + the injected release version")
     current_version = parts(version)
     formal = [item for item in releases if not item.get("draft") and not item.get("prerelease")]
     current = [item for item in formal if item["tag_name"] == tag]
@@ -103,7 +107,7 @@ def release_plan(version, tag, releases, candidate=None, read_asset=None, platfo
             continue
         number = parts(item["tag_name"].removeprefix("v"))
         if number >= current_version:
-            raise ValueError("VERSION must be greater than every previous formal release")
+            raise ValueError("Release version must be greater than every previous formal release")
         previous.append((number, item))
     if candidate is not None:
         check_metadata(candidate, version, platform)
@@ -145,10 +149,10 @@ def main():
     args = parser.parse_args()
     if args.upload and args.assets is None:
         parser.error("--upload requires --assets")
-    version = (ROOT / "VERSION").read_text().strip()
+    version = release_version()
     tag = os.environ["RELEASE_TAG"]
     if tag != "v" + version:
-        raise ValueError("Release tag must equal v + root VERSION")
+        raise ValueError("Release tag must equal v + the injected release version")
     parts(version)
     repository = os.environ["GITHUB_REPOSITORY"]
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
