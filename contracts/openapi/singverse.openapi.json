@@ -8166,6 +8166,130 @@
         }
       }
     },
+    "/api/v1/ai/models/discover": {
+      "post": {
+        "operationId": "discoverAiModels",
+        "summary": "Fetch model choices using saved or unsaved service settings",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiModelDiscoveryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Invalid input, authorization, revision conflict, rate limit or upstream failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiModelDiscoveryInput"
+              }
+            }
+          }
+        },
+        "description": "Administrator Cookie and CSRF protected. Fetches model metadata through Go without saving the draft, generating text, or changing bindings. Supports OpenAI-compatible /models, Anthropic model pagination, and Gemini model pagination (generation-capable models only). Credentials are never returned. Up to 10 pages, 2000 unique choices, 4 MiB per response, bounded by timeoutSeconds; unsupported lists may be entered manually."
+      }
+    },
     "/api/v1/ai/models/{id}": {
       "put": {
         "operationId": "saveAiModelService",
@@ -9975,8 +10099,31 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "afterStateRevision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Last accepted stateRevision, not the queue revision. Required with waitMs."
+          },
+          {
+            "name": "waitMs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8000
+            },
+            "description": "Maximum wait in milliseconds; requires afterStateRevision. Changes wake the request immediately after commit."
           }
-        ]
+        ],
+        "description": "Without query parameters, returns immediately. With afterStateRevision and waitMs together, waits outside all database transactions and session locks until a committed session change or the bounded timeout, then reauthenticates and returns a current snapshot. A stale or future revision returns immediately. TV responses refresh presence; cancellation releases the waiter. Only the owning TV receives commands. Clients must opt in using snapshotWaitMs, retain periodic polling for old servers, and keep catalog/favorite refresh independent."
       }
     },
     "/api/v1/tv/sessions/{id}/commands": {
@@ -10237,8 +10384,31 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "afterStateRevision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "Last accepted stateRevision, not the queue revision. Required with waitMs."
+          },
+          {
+            "name": "waitMs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8000
+            },
+            "description": "Maximum wait in milliseconds; requires afterStateRevision. Changes wake the request immediately after commit."
           }
-        ]
+        ],
+        "description": "Without query parameters, returns immediately. With afterStateRevision and waitMs together, waits outside all database transactions and session locks until a committed session change or the bounded timeout, then reauthenticates and returns a current snapshot. A stale or future revision returns immediately. TV responses refresh presence; cancellation releases the waiter. Only the owning TV receives commands. Clients must opt in using snapshotWaitMs, retain periodic polling for old servers, and keep catalog/favorite refresh independent."
       }
     },
     "/api/v1/party/sessions/{id}/commands": {
@@ -26011,6 +26181,1540 @@
           }
         }
       }
+    },
+    "/api/v1/ai/assistant/status": {
+      "get": {
+        "operationId": "assistantStatus",
+        "summary": "Assistant readiness and configuration guidance",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/tools": {
+      "get": {
+        "operationId": "assistantTools",
+        "summary": "Business tool catalogue, schemas and confirmation requirements",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantTool"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/conversations": {
+      "get": {
+        "operationId": "assistantConversations",
+        "summary": "Newest 200 conversations, retained until explicitly deleted",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantConversation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "assistantCreate",
+        "summary": "Create conversation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantConversation"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/conversations/{id}": {
+      "get": {
+        "operationId": "assistantDetail",
+        "summary": "Restore persisted messages, runs and approvals",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "assistantDelete",
+        "summary": "Delete inactive history; business data and tasks remain",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/conversations/{id}/messages": {
+      "post": {
+        "operationId": "assistantSubmit",
+        "summary": "Idempotent message submission; one active run per conversation",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantRun"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSubmit"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/runs/{id}": {
+      "get": {
+        "operationId": "assistantRun",
+        "summary": "Run status and persisted event cursor",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantRun"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/runs/{id}/stop": {
+      "post": {
+        "operationId": "assistantStop",
+        "summary": "Stop conversation without cancelling accepted business work",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/runs/{id}/operations/{operationId}/decision": {
+      "post": {
+        "operationId": "assistantDecide",
+        "summary": "Confirm or reject the exact frozen revision; decision request ID is idempotent",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantRun"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantDecision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/runs/{id}/operations/{operationId}/reconcile": {
+      "get": {
+        "operationId": "assistantReconcile",
+        "summary": "Read-only business evidence; never replays an uncertain write",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantReconciliation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/assistant/runs/{id}/events": {
+      "get": {
+        "operationId": "assistantEvents",
+        "summary": "SSE replay by sequence; Last-Event-ID takes precedence over after query",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Administrator session, input, state, rate limit or upstream error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "SSE message data is JSON AssistantEvent; id is its sequence. Heartbeat every 15 seconds; reconnect after up to two minutes. A terminal run closes after all events.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "x-event-schema": {
+              "$ref": "#/components/schemas/AssistantEvent"
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -29310,7 +31014,8 @@
           },
           "endpoint": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "Model services accept an HTTP(S) origin, versioned API base (for example /v1), or full operation URL. Versioned bases are expanded by protocol and saved canonically. Existing custom full operation paths remain exact; search services keep their existing exact URL behavior."
           },
           "model": {
             "type": "string",
@@ -29383,7 +31088,8 @@
           },
           "endpoint": {
             "type": "string",
-            "maxLength": 2048
+            "maxLength": 2048,
+            "description": "Model services accept an HTTP(S) origin, versioned API base (for example /v1), or full operation URL. Versioned bases are expanded by protocol and saved canonically. Existing custom full operation paths remain exact; search services keep their existing exact URL behavior."
           },
           "model": {
             "type": "string",
@@ -29541,7 +31247,8 @@
             "type": "string",
             "enum": [
               "generation",
-              "classification"
+              "classification",
+              "tools"
             ]
           },
           "query": {
@@ -30048,6 +31755,12 @@
             "items": {
               "$ref": "#/components/schemas/PartyReaction"
             }
+          },
+          "snapshotWaitMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8000,
+            "description": "Optional server-advertised maximum long-poll duration. When present, send afterStateRevision and waitMs on the snapshot endpoint; older servers without this field require periodic immediate polling."
           }
         },
         "required": [
@@ -30671,6 +32384,11 @@
               "backing"
             ],
             "description": "Resolve shared role at negotiation time; generated accompaniment uses backingUrl with the original timeline."
+          },
+          "switchableAudio": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt-in for admin browser HLS role switching. When confirmed original and backing source tracks exist, retain alternate audio in one HLS resource. The client selects the role using execution.trackMapping and HLS rendition URIs stream_audioN.m3u8; N is the zero-based audio entry index in trackMapping. Other clients and generated accompaniment keep existing negotiation behavior."
           }
         }
       },
@@ -30729,6 +32447,30 @@
                 "type": "string",
                 "format": "uuid",
                 "description": "Opaque identifier for a verified Java-owned persistent cache; each playback retains its own authorization and lease."
+              },
+              "trackMapping": {
+                "type": "array",
+                "description": "Output stream mapping in encoder order. For alternate HLS audio, filter kind=audio and match sourceId to the confirmed role. The audio entry index identifies stream_audioN.m3u8. Native HLS labels use audio_<outputIndex>.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "sourceId",
+                    "outputIndex",
+                    "kind"
+                  ],
+                  "properties": {
+                    "sourceId": {
+                      "type": "string"
+                    },
+                    "outputIndex": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "kind": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           },
@@ -36001,6 +37743,494 @@
             "description": "May be empty; line breaks and tabs are allowed, other control characters are rejected."
           }
         }
+      },
+      "AssistantStatus": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "toolCount": {
+            "type": "integer"
+          },
+          "settingsPage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "message",
+          "model",
+          "toolCount",
+          "settingsPage"
+        ]
+      },
+      "AssistantConversation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "activeRunId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "activeRunId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AssistantRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RUNNING",
+              "WAITING",
+              "COMPLETED",
+              "FAILED",
+              "STOPPED",
+              "INTERRUPTED"
+            ]
+          },
+          "modelServiceId": {
+            "type": "string"
+          },
+          "lastSequence": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "requestId",
+          "status",
+          "modelServiceId",
+          "lastSequence",
+          "error",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AssistantMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "runId",
+          "role",
+          "content",
+          "createdAt"
+        ]
+      },
+      "AssistantPreview": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "targets": {},
+          "changes": {},
+          "impact": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "targets",
+          "changes",
+          "impact",
+          "revision",
+          "page"
+        ]
+      },
+      "AssistantOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "EXECUTING",
+              "SUCCEEDED",
+              "FAILED",
+              "REJECTED",
+              "STALE",
+              "UNCERTAIN"
+            ]
+          },
+          "arguments": {},
+          "preview": {
+            "$ref": "#/components/schemas/AssistantPreview"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "result": {},
+          "error": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "runId",
+          "toolName",
+          "state",
+          "arguments",
+          "preview",
+          "revision",
+          "result",
+          "error",
+          "decisionId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AssistantDetail": {
+        "type": "object",
+        "properties": {
+          "conversation": {
+            "$ref": "#/components/schemas/AssistantConversation"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantMessage"
+            }
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantRun"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantOperation"
+            }
+          }
+        },
+        "required": [
+          "conversation",
+          "messages",
+          "runs",
+          "operations"
+        ]
+      },
+      "AssistantEvent": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "sequence",
+          "kind",
+          "data",
+          "createdAt"
+        ]
+      },
+      "AssistantTool": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "write": {
+            "type": "boolean"
+          },
+          "page": {
+            "type": "string"
+          },
+          "inputSchema": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "group",
+          "description",
+          "write",
+          "page",
+          "inputSchema"
+        ]
+      },
+      "AssistantSubmit": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          }
+        },
+        "required": [
+          "requestId",
+          "content"
+        ]
+      },
+      "AssistantDecision": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "revision": {
+            "type": "string"
+          },
+          "approve": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requestId",
+          "revision",
+          "approve"
+        ]
+      },
+      "AssistantCreate": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": []
+      },
+      "AssistantReconciliation": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "evidence": {}
+        },
+        "required": [
+          "state",
+          "page"
+        ]
+      },
+      "AiModelDiscoveryInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "description": "Optional saved MODEL service whose credential may be reused only for the same provider, protocol and canonical endpoint."
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Required to match the saved service when serviceId is provided."
+          },
+          "provider": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "CHAT_COMPLETIONS",
+              "RESPONSES",
+              "ANTHROPIC",
+              "GEMINI"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "API origin, versioned base, or full generation endpoint; the server derives the corresponding models endpoint."
+          },
+          "apiKey": {
+            "type": "string",
+            "maxLength": 4096,
+            "writeOnly": true
+          },
+          "clearKey": {
+            "type": "boolean",
+            "default": false
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 180
+          }
+        },
+        "required": [
+          "provider",
+          "protocol",
+          "endpoint",
+          "timeoutSeconds"
+        ]
+      },
+      "AiModelOption": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "AiModelDiscoveryResult": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 2000,
+            "items": {
+              "$ref": "#/components/schemas/AiModelOption"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "The upstream list or bounded pagination has more entries; manual model IDs remain accepted."
+          }
+        },
+        "required": [
+          "items",
+          "truncated"
+        ]
       }
     }
   }

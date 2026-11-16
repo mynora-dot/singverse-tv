@@ -6,7 +6,11 @@ Go 为曲库、家庭收藏、反馈、队列、播放推进和互动事件的�
 
 TV 使用 `POST /tv/sessions/{id}/capabilities` 提交 `{capabilities:["AUTO_ADVANCE","SEEK","AUDIO_ROLE","APPLY_AUDIO_ROLES","REACTIONS"]}`，每次启动及重连重新声明。快照 `capabilities` 仅包含服务端支持的能力；未声明的新命令返回 409，不排入电视命令。未声明 AUTO_ADVANCE 的旧 TV 保持原有交接协议，H5 提示更新版本。
 
-快照补充 `queuePolicy`（FAIR 或 LEGACY）、`rotation`（点歌人 ID 数组）、`priorityItemId`、`manualStopped`、`sampledAt`、`tvOnline`、`tvSeenAt`、`commandResults`、`reactionCursor`、`reactions`。TV 约每秒拉取快照；设备拉取更新在线采样，15 秒无 TV 心跳视为离线。`stateRevision` 用于丢弃迟到快照；`revision` 仍为队列修订号。`playback` 补充总时长、位置采样时间及当前 `audioRole`（original/backing）。
+快照补充 `queuePolicy`（FAIR 或 LEGACY）、`rotation`（点歌人 ID 数组）、`priorityItemId`、`manualStopped`、`sampledAt`、`tvOnline`、`tvSeenAt`、`commandResults`、`reactionCursor`、`reactions`、`snapshotWaitMs`。设备取得快照时更新在线采样，15 秒无 TV 心跳视为离线。`stateRevision` 用于丢弃迟到快照；`revision` 仍为队列修订号。`playback` 补充总时长、位置采样时间及当前 `audioRole`（original/backing）。
+
+支持 `snapshotWaitMs` 的 Go 在 `GET /{tv|party}/sessions/{id}/snapshot` 上提供可选的 `afterStateRevision` 与 `waitMs`（必须同时给出，等待 1～8000 毫秒）。版本与当前状态一致时，在事务和会话锁外等待；命令、执行回执、播放状态或互动提交后立即唤醒，超时也返回最新快照并更新 TV 心跳。订阅先于版本检查建立，防止漏掉检查与等待之间的提交；回滚不发布通知；响应前重新验证身份，取消、断线和服务关闭释放等待。已有变更或不同版本立即返回，不携带参数仍为原即时读取接口。
+
+新版 TV 与 H5 根据服务端声明采用有界长等待，响应后 50 毫秒续订；TV 存在未确认命令时将等待上限降至 1 秒，以便重试丢失的回执。长等待是最多等待时间，发生变更无需等满。旧服务不声明该字段时维持每秒读取，失败后保留重连退避。TV 的参与设备/曲库刷新、H5 的收藏刷新独立于遥控循环，慢请求不阻塞命令与回执；旧请求的迟到结果仍受 NAS、身份、会话与版本校验。
 
 ## 公平轮唱与自动播放
 

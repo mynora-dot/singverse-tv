@@ -408,6 +408,9 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     var lastSongId by mutableStateOf("")
     var lastSongPage by mutableStateOf("")
     private val commandsLock = Mutex()
+    private var sessionMetadataJob: Job? = null
+    private var snapshotRequestSequence = 0L
+    private var lastSnapshotSuccess = 0L
     private val audioRoleLock = Mutex()
     private var audioRoleGeneration = 0
     var playing by mutableStateOf(false)
@@ -473,7 +476,13 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         })
         if (client.token.isNotEmpty()) run { connect() }
         scope.launch { while (isActive) { delay(30000); if (connected && foreground && !sharedFavorites.loading) sharedFavorites.load() } }
-        scope.launch { while (isActive) { delay((1000L * (1 shl failureCount.coerceAtMost(4))).coerceAtMost(16000)); if (connected) refresh() } }
+        scope.launch { while (isActive) {
+            val waitMs = snapshotWaitMs()
+            delay(if (waitMs > 0 && failureCount == 0) 50L else (1000L * (1 shl failureCount.coerceAtMost(4))).coerceAtMost(16000))
+            if (connected) try { refresh(waitForChanges = true) }
+            catch (_: CancellationException) { currentCoroutineContext().ensureActive() }
+        } }
+        scope.launch { while (isActive) { delay(1000); refreshSessionMetadata() } }
         scope.launch { while (isActive) { delay(60000); if (connected && online && foreground) checkUpdate(manual = false) } }
         scope.launch { while (isActive) { delay(10000); val id=transcodeId;if(connected && id.isNotBlank()) runCatching { json("/api/v1/tv/transcoding/$id") } } }
         scope.launch { while (isActive) {
@@ -728,26 +737,93 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         val sid = snapshot.getString("id")
         acceptSnapshot(json("/api/v1/tv/sessions/$sid/capabilities", "POST", JSONObject().put("capabilities", JSONArray(listOf("AUTO_ADVANCE", "SEEK", "AUDIO_ROLE", "APPLY_AUDIO_ROLES", "REACTIONS")))))
     }
-    suspend fun refresh() { try { val sid = snapshot.optString("id"); if (sid.isEmpty()) return; acceptSnapshot(json("/api/v1/tv/sessions/$sid/snapshot")); if(error.startsWith("与 NAS 同步失败"))error=""; val restored = !online; online = true; if (restored && foreground) checkUpdate(manual = false, connection = true); failureCount = 0; lastSync = android.os.SystemClock.elapsedRealtime(); if (foreground) { executeCommands(); ensureInvitation(); if (!participantsKnown || lastSync - lastParticipantsRefresh >= 5000) refreshParticipants(sid) }
-        if (foreground && android.os.SystemClock.elapsedRealtime() - lastLibraryRefresh > 30000) {
-            if (page == "首页") loadHome()
-            if (page == "分类") loadTags()
-            if (page == "歌单") {
-                val id=playlistDetail?.optString("id")
-                if(id==null)fetchPlaylists() else {val generation=playlistGeneration;try{val detail=json("/api/v1/tv/library/playlists/$id");if(generation==playlistGeneration&&playlistDetail?.optString("id")==id){playlistDetail=detail;if(selected==null)loadSongs()}}catch(e:TvHttpException){if(e.status==404&&generation==playlistGeneration){closePlaylist();fetchPlaylists()}else throw e}}
-            }
-            if (page == "歌手") {
-                val id=artistDetail?.optString("id")
-                if(id==null)fetchArtists() else {
-                    val generation=artistDetailGeneration
-                    try {
-                        val detail=json("/api/v1/tv/library/artists/$id")
-                        if(generation==artistDetailGeneration&&artistDetail?.optString("id")==id){artistDetail=detail;if(selected==null)loadSongs()}
-                    }catch(e:TvHttpException){if(e.status==404&&generation==artistDetailGeneration){closeArtist();fetchArtists()}else throw e}
+    private fun snapshotWaitMs(): Int {
+        if (!connected || !online || !foreground || snapshot.optString("status") != "ACTIVE" || !snapshot.has("stateRevision")) return 0
+        val limit = snapshot.optInt("snapshotWaitMs", 0)
+        if (limit !in 1..8000 || snapshot.optLong("stateRevision", -1) < 0) return 0
+        // Keep retrying unacknowledged executions even if the previous HTTP ack was lost.
+        return if ((snapshot.optJSONArray("commands")?.length() ?: 0) > 0) minOf(limit, 1000) else limit
+    }
+    suspend fun refresh(waitForChanges: Boolean = false) {
+        val sequence = ++snapshotRequestSequence
+        try {
+            val sid = snapshot.optString("id")
+            if (sid.isEmpty()) return
+            val waitMs = if (waitForChanges) snapshotWaitMs() else 0
+            val query = if (waitMs > 0) "?afterStateRevision=${snapshot.getLong("stateRevision")}&waitMs=$waitMs" else ""
+            acceptSnapshot(json("/api/v1/tv/sessions/$sid/snapshot$query"))
+            if (sid != snapshot.optString("id")) return
+            lastSnapshotSuccess = maxOf(lastSnapshotSuccess, sequence)
+            if (error.startsWith("与 NAS 同步失败")) error = ""
+            val restored = !online
+            online = true
+            if (restored && foreground) checkUpdate(manual = false, connection = true)
+            failureCount = 0
+            lastSync = SystemClock.elapsedRealtime()
+            if (foreground) { executeCommands(); ensureInvitation() }
+            refreshSessionMetadata()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            if (sequence < lastSnapshotSuccess) return
+            online = false; reactionCursor.reset(); partyReactions = emptyList(); participantsKnown = false; failureCount++
+            if (e is TvHttpException && e.status == 401) {
+                pauseLocal(); resetUpdates(); client.clear(); sharedFavorites.reset(); resetHomeActivity()
+                connected = false; clearPartyConnection(); login.open(LoginPage.METHODS); error = ""
+            } else error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}"
+        }
+    }
+    // Catalog and participant I/O have their own job; they must not postpone the
+    // next remote-command wait or mark the command connection offline on failure.
+    private fun refreshSessionMetadata() {
+        if (!connected || !online || !foreground || sessionMetadataJob?.isActive == true) return
+        val now = SystemClock.elapsedRealtime()
+        if (participantsKnown && now - lastParticipantsRefresh < 5000 && now - lastLibraryRefresh <= 30000) return
+        val sid = snapshot.optString("id")
+        if (sid.isBlank()) return
+        sessionMetadataJob = scope.launch {
+            try {
+                if (!participantsKnown || SystemClock.elapsedRealtime() - lastParticipantsRefresh >= 5000) refreshParticipants(sid)
+                if (SystemClock.elapsedRealtime() - lastLibraryRefresh > 30000) {
+                    if (page == "首页") loadHome()
+                    if (page == "分类") loadTags()
+                    if (page == "歌单") {
+                        val id = playlistDetail?.optString("id")
+                        if (id == null) fetchPlaylists() else {
+                            val generation = playlistGeneration
+                            try {
+                                val detail = json("/api/v1/tv/library/playlists/$id")
+                                if (generation == playlistGeneration && playlistDetail?.optString("id") == id) {
+                                    playlistDetail = detail
+                                    if (selected == null) loadSongs()
+                                }
+                            } catch (e: TvHttpException) {
+                                if (e.status == 404 && generation == playlistGeneration) { closePlaylist(); fetchPlaylists() } else throw e
+                            }
+                        }
+                    }
+                    if (page == "歌手") {
+                        val id = artistDetail?.optString("id")
+                        if (id == null) fetchArtists() else {
+                            val generation = artistDetailGeneration
+                            try {
+                                val detail = json("/api/v1/tv/library/artists/$id")
+                                if (generation == artistDetailGeneration && artistDetail?.optString("id") == id) {
+                                    artistDetail = detail
+                                    if (selected == null) loadSongs()
+                                }
+                            } catch (e: TvHttpException) {
+                                if (e.status == 404 && generation == artistDetailGeneration) { closeArtist(); fetchArtists() } else throw e
+                            }
+                        }
+                    }
+                    lastLibraryRefresh = SystemClock.elapsedRealtime()
                 }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (connected && foreground && snapshot.optString("id") == sid) error = "曲库或参与设备同步失败：${e.message}"
             }
-            lastLibraryRefresh = android.os.SystemClock.elapsedRealtime()
-        } } catch (e: Exception) { if (e is CancellationException) throw e; online = false; reactionCursor.reset(); partyReactions = emptyList(); participantsKnown = false; failureCount++; if (e is TvHttpException && e.status == 401) { pauseLocal(); resetUpdates(); client.clear(); sharedFavorites.reset(); resetHomeActivity(); connected = false; clearPartyConnection(); login.open(LoginPage.METHODS); error = "" } else error = "与 NAS 同步失败；本地仍可暂停或停止。${e.message}" } }
+        }
+    }
     private suspend fun refreshParticipants(sid: String) {
         val generation = ++participantsGeneration
         val server = client.base; val credential = client.token
@@ -1209,6 +1285,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         }
     }
     private fun clearPartyConnection() {
+        sessionMetadataJob?.cancel(); sessionMetadataJob = null
         categoryResults = false
         queueAddGeneration++; queueAddSongId = ""; queueAddMessage = ""
         queueAddMessageJob?.cancel(); queueAddMessageJob = null

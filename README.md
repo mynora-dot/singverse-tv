@@ -163,6 +163,8 @@ GitHub Actions Secrets 使用 `SINGVERSE_TV_KEYSTORE_BASE64`（正式 JKS 文件
 
 快照另含 stateRevision（包含播放事件的持久版本），TV 不接受同会话较低版本、换会话或换NAS后的迟到状态；队列命令仍提交 revision。
 
+Go 声明 `snapshotWaitMs` 时，TV 使用 `afterStateRevision` / `waitMs` 持续等待快照变化，命令提交即唤醒，空闲最长等待 8 秒；仍有命令未确认时上限为 1 秒，兼顾丢失回执的重试。响应后 50 毫秒续订；旧服务无声明、后台或离线时保留原每秒同步与失败退避。参与设备和曲库刷新使用独立任务，慢响应或失败不再拖延遥控和误报遥控离线；换 NAS 后忽略旧连接结果并继续建立新等待。H5 执行反馈使用同一机制，需配套更新 Go、H5 和 TV。通信测试、APK 构建与真实电视延迟验收分别记录。
+
 封面请求限制响应2MB，解码最长边约512px，16MiB有界内存缓存按NAS/封面路径/revision分开；换NAS清空缓存，减少翻页和返回时的重复读取。
 
 
