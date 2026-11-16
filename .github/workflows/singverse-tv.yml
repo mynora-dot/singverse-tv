@@ -34,6 +34,8 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Check version and immutable release assets
         run: python3 scripts/validate-release.py
       - name: Restore durable signing key
@@ -50,7 +52,7 @@ jobs:
           SINGVERSE_TV_KEY_ALIAS: ${{ secrets.SINGVERSE_TV_KEY_ALIAS }}
           SINGVERSE_TV_KEY_PASSWORD: ${{ secrets.SINGVERSE_TV_KEY_PASSWORD }}
           RELEASE_NOTES: ${{ github.event.release.body }}
-        run: ./gradlew --no-daemon -PsingverseSignRelease=true prepareTvRelease
+        run: ./gradlew --no-daemon --build-cache -PsingverseSignRelease=true prepareTvRelease
       - name: Upload verified immutable assets
         run: python3 scripts/validate-release.py --assets app/build/tv-release --upload
       - name: Remove temporary signing key
