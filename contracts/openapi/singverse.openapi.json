@@ -24604,6 +24604,36 @@
                 "tv"
               ]
             }
+          },
+          {
+            "name": "abi",
+            "in": "query",
+            "required": false,
+            "description": "选择单个处理器架构；与另一选包参数同时提供时必须一致。手机不支持 x86。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+              ]
+            }
+          },
+          {
+            "name": "X-SingVerse-ABI",
+            "in": "header",
+            "required": false,
+            "description": "选择单个处理器架构；与另一选包参数同时提供时必须一致。手机不支持 x86。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+              ]
+            }
           }
         ],
         "responses": {
@@ -24629,6 +24659,16 @@
           },
           "503": {
             "description": "Unavailable or invalid release",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, repeated or conflicting ABI selection",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24666,6 +24706,36 @@
             "in": "header",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "abi",
+            "in": "query",
+            "required": false,
+            "description": "选择单个处理器架构；与另一选包参数同时提供时必须一致。手机不支持 x86。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+              ]
+            }
+          },
+          {
+            "name": "X-SingVerse-ABI",
+            "in": "header",
+            "required": false,
+            "description": "选择单个处理器架构；与另一选包参数同时提供时必须一致。手机不支持 x86。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+              ]
             }
           }
         ],
@@ -24706,6 +24776,16 @@
           },
           "416": {
             "description": "Range not satisfiable"
+          },
+          "400": {
+            "description": "Invalid, repeated or conflicting ABI selection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -24735,6 +24815,36 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "abi",
+            "in": "query",
+            "required": false,
+            "description": "选择单个处理器架构；与另一选包参数同时提供时必须一致。手机不支持 x86。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+              ]
+            }
+          },
+          {
+            "name": "X-SingVerse-ABI",
+            "in": "header",
+            "required": false,
+            "description": "选择单个处理器架构；与另一选包参数同时提供时必须一致。手机不支持 x86。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+              ]
+            }
           }
         ],
         "responses": {
@@ -24752,6 +24862,16 @@
           },
           "416": {
             "description": "Range not satisfiable"
+          },
+          "400": {
+            "description": "Invalid, repeated or conflicting ABI selection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -37429,7 +37549,7 @@
               "minSdk": {
                 "type": "integer",
                 "enum": [
-                  23,
+                  21,
                   24
                 ]
               },
@@ -37457,10 +37577,16 @@
                 "type": "string"
               },
               "url": {
-                "enum": [
-                  "/api/v1/client-releases/mobile/apk",
-                  "/api/v1/client-releases/tv/apk"
-                ]
+                "type": "string",
+                "pattern": "^/api/v1/client-releases/(mobile|tv)/apk(?:\\?abi=(armeabi-v7a|arm64-v8a|x86|x86_64))?$"
+              },
+              "variants": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": {
+                  "$ref": "#/components/schemas/ClientReleaseVariant"
+                }
               }
             }
           }
@@ -38231,6 +38357,40 @@
           "items",
           "truncated"
         ]
+      },
+      "ClientReleaseVariant": {
+        "type": "object",
+        "required": [
+          "abi",
+          "size",
+          "sha256",
+          "url"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "abi": {
+            "type": "string",
+            "enum": [
+              "armeabi-v7a",
+              "arm64-v8a",
+              "x86",
+              "x86_64"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 268435456
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^/api/v1/client-releases/(mobile|tv)/apk\\?abi=(armeabi-v7a|arm64-v8a|x86|x86_64)$"
+          }
+        }
       }
     }
   }

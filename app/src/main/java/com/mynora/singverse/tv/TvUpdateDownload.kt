@@ -30,7 +30,8 @@ internal object TvUpdateDownload {
         TvMediaTransport.requireSameOrigin(address, address + release.url)
         require(release.url == TV_APK_PATH)
         return suspendCancellableCoroutine { continuation ->
-            val request = Request.Builder().url(address + release.url).build()
+            val request = Request.Builder().url(address + release.url)
+                .apply { release.abis.singleOrNull()?.takeIf { it in TV_RELEASE_ABIS }?.let { header("X-SingVerse-ABI", it) } }.build()
             val call = http.newCall(request)
             continuation.invokeOnCancellation { call.cancel(); file.delete() }
             call.enqueue(object : Callback {

@@ -13,6 +13,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from build_version import release_version
+from release_manifest import manifest_packages
 
 ROOT = Path(__file__).resolve().parents[1]
 HEX = re.compile(r"[a-f0-9]{64}")
@@ -73,24 +74,32 @@ def asset(release, name):
 
 
 def check_metadata(metadata, version, platform="tv"):
-    expected = dict(schemaVersion=1, platform=platform, packageName="com.mynora.singverse." + platform,
-                    versionName=version, versionCode=version_code(version))
-    if any(type(metadata.get(k)) is not type(value) or metadata.get(k) != value for k, value in expected.items()):
-        raise ValueError("Published release metadata differs from its tag")
-    if type(metadata.get("minSdk")) is not int or metadata["minSdk"] < (21 if platform == "tv" else 24):
-        raise ValueError("Published release minSdk is invalid")
-    if not isinstance(metadata.get("certificateSha256"), str) or not HEX.fullmatch(metadata["certificateSha256"]):
-        raise ValueError("Published release certificate is invalid")
-    if not isinstance(metadata.get("sha256"), str) or not HEX.fullmatch(metadata["sha256"]):
-        raise ValueError("Published APK digest is invalid")
-    if type(metadata.get("size")) is not int or not 0 < metadata["size"] <= 256 << 20:
-        raise ValueError("Published APK size is invalid")
-    abis = metadata.get("abis")
-    known = {"universal", "arm64-v8a", "armeabi-v7a", "x86", "x86_64"}
-    if not isinstance(abis, list) or not abis or any(type(abi) is not str or abi not in known for abi in abis) or len(set(abis)) != len(abis) or ("universal" in abis and len(abis) != 1):
-        raise ValueError("Published APK ABIs are invalid")
-    if not isinstance(metadata.get("notes"), str) or len(metadata["notes"].encode("utf-8")) > 16000:
-        raise ValueError("Published release notes are invalid")
+    manifest_packages(metadata, version, platform)
+
+
+def prepared_files(directory, metadata, version, platform):
+    if metadata.get("schemaVersion") != 2:
+        raise ValueError("New releases must publish separate per-ABI APKs")
+    packages = manifest_packages(metadata, version, platform)
+    names = [name for name, _ in packages] + ["release.json"]
+    sums = {}
+    for line in (directory / "SHA256SUMS").read_text().splitlines():
+        match = re.fullmatch(r"([a-f0-9]{64})  ([^/\\]+)", line)
+        if not match or match[2] in sums:
+            raise ValueError("Invalid release checksums")
+        sums[match[2]] = match[1]
+    if set(sums) != set(names):
+        raise ValueError("Release checksums must cover every ABI and release.json")
+    for name in names:
+        data = (directory / name).read_bytes()
+        if hashlib.sha256(data).hexdigest() != sums[name]:
+            raise ValueError("Prepared release checksum differs: " + name)
+    for name, item in packages:
+        if (directory / name).stat().st_size != item["size"] or sums[name] != item["sha256"]:
+            raise ValueError("Prepared APK differs from release metadata: " + name)
+    if (directory / ("singverse-" + platform + ".apk")).exists():
+        raise ValueError("Legacy universal APK must not be staged for a new release")
+    return names + ["SHA256SUMS"]
 
 
 def release_plan(version, tag, releases, candidate=None, read_asset=None, platform="tv"):
@@ -122,10 +131,10 @@ def release_plan(version, tag, releases, candidate=None, read_asset=None, platfo
     return current[0]
 
 
-def reusable_assets(release, directory, read_asset, platform="tv"):
+def reusable_assets(release, directory, read_asset, platform="tv", filenames=None):
     """Check every existing byte before uploading any missing asset."""
     missing = []
-    for name in ("singverse-" + platform + ".apk", "release.json", "SHA256SUMS"):
+    for name in filenames or ("singverse-" + platform + ".apk", "release.json", "SHA256SUMS"):
         local = directory / name
         if not local.is_file():
             raise ValueError("Prepared release asset missing: " + name)
@@ -176,7 +185,8 @@ def main():
     candidate = json.loads((args.assets / "release.json").read_text()) if args.assets else None
     current = release_plan(version, tag, releases, candidate, read_asset, args.platform)
     if args.assets:
-        missing = reusable_assets(current, args.assets, read_asset, args.platform)
+        filenames = prepared_files(args.assets, candidate, version, args.platform)
+        missing = reusable_assets(current, args.assets, read_asset, args.platform, filenames)
         if args.upload and missing:
             subprocess.run(["gh", "release", "upload", tag, *map(str, missing)], check=True)
         print("Validated signing continuity and immutable release assets")

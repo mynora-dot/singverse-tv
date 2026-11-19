@@ -21,13 +21,19 @@ internal object TvApiTransport {
         .connectTimeout(5, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
         .callTimeout(15, TimeUnit.SECONDS).build()
 
-    suspend fun request(connection: Pair<String, String>, path: String, method: String, body: String?): TvApiResponse {
+    suspend fun request(connection: Pair<String, String>, path: String, method: String, body: String?, updateAbi: String? = null): TvApiResponse {
         val (address, credential) = connection
         TvMediaTransport.requireSameOrigin(address, address + path)
         val content = body?.toRequestBody("application/json; charset=utf-8".toMediaType())
             ?: if (method in listOf("POST", "PUT", "PATCH")) ByteArray(0).toRequestBody() else null
         val request = Request.Builder().url(address + path).method(method, content).header("Accept", "application/json")
-            .apply { if (credential.isNotBlank()) header("Authorization", "Bearer $credential") }.build()
+            .apply {
+                if (credential.isNotBlank()) header("Authorization", "Bearer $credential")
+                if (path == TV_RELEASE_PATH && updateAbi != null) {
+                    require(updateAbi in TV_RELEASE_ABIS)
+                    header("X-SingVerse-ABI", updateAbi)
+                }
+            }.build()
         return suspendCancellableCoroutine { continuation ->
             val call = http.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }

@@ -41,6 +41,10 @@ internal class TvUpdater(private val context: Context, private val client: TvCli
         require(archive.packageName == context.packageName && archive.packageName == release.packageName) { "安装包不是 SingVerse TV" }
         require(code(archive) == release.versionCode && code(archive) > code(installed) && archive.versionName == release.versionName) { "安装包版本无效或不是更新版本" }
         require(compatible(release)) { "此安装包不支持当前电视系统或架构" }
+        val actualAbis = java.util.zip.ZipFile(file).use { zip -> zip.entries().asSequence().map { it.name }
+            .filter { it.startsWith("lib/") && it.endsWith(".so") }.map { it.split('/')[1] }.toSet() }
+        require((if (actualAbis.isEmpty()) setOf("universal") else actualAbis) == release.abis.toSet() &&
+            (actualAbis.isEmpty() || actualAbis.any { it in Build.SUPPORTED_ABIS })) { "安装包处理器架构与发布清单不一致" }
         if (Build.VERSION.SDK_INT >= 24) require(archive.applicationInfo?.minSdkVersion == release.minSdk) { "安装包最低系统信息不一致" }
         val candidate = if (Build.VERSION.SDK_INT >= 28) archive.signingInfo?.apkContentsSigners else archive.signatures
         val current = if (Build.VERSION.SDK_INT >= 28) installed.signingInfo?.apkContentsSigners else installed.signatures

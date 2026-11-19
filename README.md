@@ -151,9 +151,11 @@ Go 提供同目录、同文件名主体的 `.lrc` / `.srt` / `.vtt`（小写扩�
 
 `SINGVERSE_VERSION=0.0.2 make release` 要求环境提供 `SINGVERSE_TV_KEYSTORE`（文件路径）、`SINGVERSE_TV_STORE_PASSWORD`、`SINGVERSE_TV_KEY_ALIAS`、`SINGVERSE_TV_KEY_PASSWORD`，并运行 release lint。必须使用由发行方生成、备份并长期保管的正式签名，密钥不入库；不能使用 Debug 签名发布，也不能随版本重新生成正式密钥。普通 `make build` 不需要正式密钥。
 
-GitHub Actions Secrets 使用 `SINGVERSE_TV_KEYSTORE_BASE64`（正式 JKS 文件的 base64 内容）及上述密码、别名三项；CI 只在临时目录还原签名文件，构建后删除。首次发布前配置并安全备份长期签名，后续版本继续使用同一密钥。工作流仅由正式 GitHub Release 触发，普通 push/PR、草稿及 Pre-release 不发布；直接运行 `./gradlew --no-daemon -PsingverseSignRelease=true prepareTvRelease`，不运行单元测试或 lint。生成并核验 `app/build/tv-release/singverse-tv.apk`、`release.json`、`SHA256SUMS` 后上传。同标签重试逐文件读取已上传内容，完全相同则复用、缺失则补传、不同则拒绝，不覆盖旧文件。GitHub Release 正文写入 notes，最多16000 UTF-8字节；也可用资产脚本的 --notes 参数指定文件。资产生成期间 Go 镜像采集会因资产不全明确失败；两端正式发布完成后再发布 Go 管理平台。CI 尚未运行时不能宣称远程发布通过。
+GitHub Actions Secrets 使用 `SINGVERSE_TV_KEYSTORE_BASE64`（正式 JKS 文件的 base64 内容）及上述密码、别名三项；CI 只在临时目录还原签名文件，构建后删除。首次发布前配置并安全备份长期签名，后续版本继续使用同一密钥。工作流仅由正式 GitHub Release 触发，普通 push/PR、草稿及 Pre-release 不发布；直接运行 `./gradlew --no-daemon -PsingverseSignRelease=true prepareTvRelease`，不运行单元测试或 lint。生成并核验 `app/build/tv-release/singverse-tv-{armeabi-v7a|arm64-v8a|x86|x86_64}.apk` 四个单架构 APK、`release.json` 和 `SHA256SUMS` 后上传；不生成或上传通用 APK。同标签重试逐文件读取已上传内容，完全相同则复用、缺失则补传、不同则拒绝，不覆盖旧文件。GitHub Release 正文写入 notes，最多16000 UTF-8字节；也可用资产脚本的 --notes 参数指定文件。资产生成期间 Go 镜像采集会因资产不全明确失败；两端正式发布完成后再发布 Go 管理平台。CI 尚未运行时不能宣称远程发布通过。
 
-`release.json` 包含 schemaVersion、platform、versionCode/versionName、packageName、minSdk、abis、size、sha256、certificateSha256 和 notes；Android `aapt`、`apksigner` 核验真实 APK 信息，包体最大256 MiB。无 native 库时 abis 为 `universal`。根 Makefile 是本仓库入口，构建不隐式读取相邻仓库源码。
+`release.json` 使用 schemaVersion=2，公共字段包含 platform、versionCode/versionName、packageName、minSdk、certificateSha256 和 notes；variants 每项包含 abi、fileName、size、sha256。Android `aapt`、`apksigner` 核验全部四个 APK 的真实信息，每个包只包含对应的一个 ABI，包体最大256 MiB；漏包、重复架构、版本或签名不一致均拒绝。四个架构共用标签派生的 versionCode。历史 schemaVersion=1 清单继续用于上一正式版证书检查及已锁定的 Go 镜像组装。根 Makefile 是本仓库入口，构建不隐式读取相邻仓库源码。
+
+检查更新通过 `X-SingVerse-ABI` 向 NAS 报告设备首选架构，下载时使用清单确定的同一架构。NAS 下载页可选择四种架构，需要同步部署新版 Go 和前端；新客户端仍支持旧 NAS 的通用包。没有架构请求头的旧客户端默认获取 ARMv7，不支持该默认包时需先从下载页安装匹配架构的新版本。
 
 连接或恢复 NAS 成功后异步检查 `GET /api/v1/client-releases/tv`，前台每24小时复查；「设置 → 应用更新」可随时手动检查。仅当镜像中的 `versionCode` 更高且系统/架构兼容时提示。播放、准备、缓冲或暂停期间自动提示延后，停止或结束后再展示；可选择稍后或跳过此版本。跳过记录按 NAS origin 和版本保存，新版本仍会提示，手动检查可再次找到已跳过版本。检查失败仅在更新页显示，不影响点歌播放。
 

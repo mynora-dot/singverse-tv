@@ -8,6 +8,9 @@ internal const val TV_RELEASE_PATH = "/api/v1/client-releases/tv"
 internal const val TV_APK_PATH = "$TV_RELEASE_PATH/apk"
 internal const val MAX_APK_SIZE = 268435456L
 internal const val UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000L
+internal val TV_RELEASE_ABIS = setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+
+internal fun preferredUpdateAbi(supported: List<String>): String? = supported.firstOrNull { it in TV_RELEASE_ABIS }
 
 internal data class TvRelease(
     val versionCode: Long,

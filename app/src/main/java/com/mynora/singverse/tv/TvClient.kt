@@ -70,7 +70,8 @@ class TvClient(context: Context) {
         val (address, _) = connection
         val server = URI(address)
         if (server.scheme == "http") require(java.net.InetAddress.getAllByName(server.host).all { it.isLoopbackAddress || it.isSiteLocalAddress }) { "HTTP 仅限本机或受限内网 NAS，请使用 HTTPS 访问其他地址" }
-        val response = TvApiTransport.request(connection, path, method, body?.toString())
+        val updateAbi = if (path == TV_RELEASE_PATH) requireNotNull(preferredUpdateAbi(android.os.Build.SUPPORTED_ABIS.toList())) { "此电视处理器没有可用的安装包" } else null
+        val response = TvApiTransport.request(connection, path, method, body?.toString(), updateAbi)
         if (response.status !in 200..299) throw TvHttpException(response.status, runCatching { JSONObject(response.body).optString("detail", "请求失败：${response.status}") }.getOrDefault("请求失败：${response.status}"))
         response.body
     }

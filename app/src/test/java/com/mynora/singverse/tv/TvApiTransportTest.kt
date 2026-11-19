@@ -10,6 +10,25 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class TvApiTransportTest {
+    @Test fun updateManifestReportsTheDeviceAbiToSelectTheMatchingApk() = runBlocking<Unit> {
+        ServerSocket(0).use { server ->
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val headers = executor.submit<List<String>> {
+                    server.accept().use { socket ->
+                        val lines = mutableListOf<String>()
+                        val input = socket.getInputStream().bufferedReader()
+                        while (true) { val line = input.readLine() ?: break; if (line.isEmpty()) break; lines.add(line) }
+                        socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".toByteArray())
+                        lines
+                    }
+                }
+                val abi = preferredUpdateAbi(listOf("x86_64", "x86"))
+                assertEquals(200, TvApiTransport.request("http://127.0.0.1:${server.localPort}" to "fixture", TV_RELEASE_PATH, "GET", null, abi).status)
+                assertTrue(headers.get(3, TimeUnit.SECONDS).any { it == "X-SingVerse-ABI: x86_64" })
+            } finally { executor.shutdownNow() }
+        }
+    }
     @Test fun cancellationClosesAStalledResponseWithoutWaitingForReadTimeout() = runBlocking<Unit> {
         ServerSocket(0).use { server ->
             val started = CountDownLatch(1)

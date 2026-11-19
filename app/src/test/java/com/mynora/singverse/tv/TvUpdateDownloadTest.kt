@@ -32,11 +32,13 @@ class TvUpdateDownloadTest {
                     }
                 }
                 val file = File(temporary.root, "update.apk"); var progress = 0L; var validated = false
-                TvUpdateDownload.download("http://127.0.0.1:${server.localPort}", release(), file, { true }, { progress = it }) {
+                TvUpdateDownload.download("http://127.0.0.1:${server.localPort}", release().copy(abis = listOf("armeabi-v7a")), file, { true }, { progress = it }) {
                     assertArrayEquals(payload, it.readBytes()); validated = true
                 }
                 assertTrue(validated); assertEquals(payload.size.toLong(), progress)
-                assertTrue(headers.get(3, TimeUnit.SECONDS).first().contains(TV_APK_PATH))
+                val received = headers.get(3, TimeUnit.SECONDS)
+                assertTrue(received.first().contains(TV_APK_PATH))
+                assertTrue(received.any { it == "X-SingVerse-ABI: armeabi-v7a" })
             } finally { executor.shutdownNow() }
         }
     }

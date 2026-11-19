@@ -10,6 +10,8 @@ val versionParts = productVersion.split('.').map { it.toLong() }
 check(versionParts[0] <= 2100 && versionParts[1] <= 999 && versionParts[2] <= 999) { "SINGVERSE_VERSION minor/patch must be <= 999" }
 val productVersionCode = (versionParts[0] * 1_000_000 + versionParts[1] * 1_000 + versionParts[2]).coerceAtLeast(1L)
 check(productVersionCode in 1..2_100_000_000L) { "SINGVERSE_VERSION produces an invalid Android versionCode" }
+val releaseAbis = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+val releaseRequested = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
 
 android {
     lint {
@@ -29,6 +31,12 @@ android {
         testInstrumentationRunner = "com.mynora.singverse.tv.TvUiTestRunner"
         versionCode = productVersionCode.toInt()
         versionName = productVersion
+    }
+    splits.abi {
+        isEnable = releaseRequested
+        reset()
+        include(*releaseAbis.toTypedArray())
+        isUniversalApk = false
     }
     if (providers.gradleProperty("singverseSignRelease").orNull == "true") {
         val signingValues = listOf("SINGVERSE_TV_KEYSTORE", "SINGVERSE_TV_STORE_PASSWORD", "SINGVERSE_TV_KEY_ALIAS", "SINGVERSE_TV_KEY_PASSWORD").associateWith { System.getenv(it) ?: error("Missing release signing environment: $it") }
@@ -73,6 +81,7 @@ gradle.taskGraph.whenReady {
 tasks.register<Exec>("prepareTvRelease") {
     dependsOn("assembleRelease")
     workingDir(rootProject.projectDir)
-    commandLine("python3", "scripts/prepare-release.py", "--apk", layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile.absolutePath,
-        "--platform", "tv", "--output", layout.buildDirectory.dir("tv-release").get().asFile.absolutePath)
+    commandLine(listOf("python3", "scripts/prepare-release.py", "--platform", "tv",
+        "--output", layout.buildDirectory.dir("tv-release").get().asFile.absolutePath) +
+        releaseAbis.flatMap { abi -> listOf("--apk", layout.buildDirectory.file("outputs/apk/release/app-$abi-release.apk").get().asFile.absolutePath) })
 }

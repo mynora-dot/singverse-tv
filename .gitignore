@@ -45,3 +45,17 @@ __pycache__/
 
 # Personal agent skills are maintained outside this repository.
 /skills/
+
+# Local secrets, signing material and private verification captures
+.envrc
+.netrc
+.npmrc
+*.mobileprovision
+*.secret
+*.secrets
+secrets.*
+credentials.*.json
+/private-release/
+/.private-release/
+/private-reports/
+*.har
