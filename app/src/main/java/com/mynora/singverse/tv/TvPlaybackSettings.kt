@@ -73,7 +73,7 @@ private val PlaybackSettingTabs = listOf(
                     .weight(1f, fill = false)
                     .fillMaxWidth()
                     .tvScreenEnter(tab)
-                    .glassSurface(TvShape.row, intensity = 0.65f, base = Color(0x80FFFFFF), elevation = 0.dp),
+                    .glassSurface(TvShape.row, intensity = 0.65f, base = Glass.surfaceCard, elevation = 0.dp),
                 state = rememberLazyListState(),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -267,8 +267,8 @@ private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean
                 highlighted = focused || selected,
                 base = when {
                     focused -> Glass.surfaceFocus
-                    selected -> Color(0xE8FFFFFF)
-                    else -> Color(0x66FFFFFF)
+                    selected -> Glass.surfaceHover
+                    else -> Color(0x55161A22)
                 },
                 tintAccent = if (selected && !focused) Brand.copy(alpha = 0.08f) else null,
                 elevation = if (focused) 4.dp else if (selected) 2.dp else 0.dp,
@@ -304,7 +304,7 @@ private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean
     Row(
         Modifier
             .fillMaxWidth()
-            .glassSurface(TvShape.control, intensity = 0.55f, base = Color(0x66FFFFFF), elevation = 0.dp)
+            .glassSurface(TvShape.control, intensity = 0.55f, base = Glass.surfaceCard, elevation = 0.dp)
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -312,7 +312,7 @@ private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean
         Box(
             Modifier
                 .size(38.dp)
-                .glassSurface(TvShape.control, intensity = 0.75f, base = Color(0xB8FFFFFF), elevation = 0.dp),
+                .glassSurface(TvShape.control, intensity = 0.75f, base = Glass.surfaceHover, elevation = 0.dp),
             contentAlignment = Alignment.Center,
         ) {
             MusicMark(Modifier.size(18.dp), tint = Muted)

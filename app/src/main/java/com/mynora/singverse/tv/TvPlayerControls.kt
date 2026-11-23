@@ -77,7 +77,7 @@ import androidx.tv.material3.Text
     Column(
         modifier
             .fillMaxWidth()
-            .glassSurface(GlassShape.panel, highlighted = false, base = if (audioOnly) Glass.surfaceFloat else Glass.mediaSafe, elevation = 14.dp)
+            .glassSurface(GlassShape.panel, highlighted = false, base = if (audioOnly) Glass.surfaceFloat else Glass.mediaSafe, elevation = 8.dp, backdropBlur = audioOnly)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -113,8 +113,8 @@ import androidx.tv.material3.Text
             // Segmented Liquid Glass track for Vocal / Backing role switch
             Row(
                 Modifier
-                    .background(Color(0x141D2438), GlassShape.pill)
-                    .border(0.75.dp, Color(0x1E1D2438), GlassShape.pill)
+                    .background(Color(0x40000000), GlassShape.pill)
+                    .border(0.75.dp, Color(0x20FFFFFF), GlassShape.pill)
                     .padding(3.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -151,7 +151,7 @@ import androidx.tv.material3.Text
                 GlassShape.pill,
                 highlighted = focused && windowFocused,
                 intensity = if (focused) 1f else 0.68f,
-                base = if (focused && windowFocused) Glass.surfaceFocus else Color(0x78FFFFFF),
+                base = if (focused && windowFocused) Glass.surfaceFocus else Color(0x2AFFFFFF),
                 elevation = if (focused && windowFocused) 8.dp else 0.dp,
             )
             .tvFocus(focused && windowFocused, GlassShape.pill)
@@ -185,7 +185,7 @@ import androidx.tv.material3.Text
     ) {
         Text(controlTime(position), color = if (preview != null) Brand else Paper, fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.SemiBold)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Box(Modifier.fillMaxWidth().height(5.dp).background(Paper.copy(alpha = .14f), GlassShape.pill)) {
+            Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0x2EFFFFFF), GlassShape.pill)) {
                 Box(
                     Modifier
                         .fillMaxWidth(fraction)
@@ -196,6 +196,9 @@ import androidx.tv.material3.Text
                             GlassShape.pill,
                         ),
                 )
+                Box(Modifier.fillMaxWidth(fraction).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
+                    Box(Modifier.requiredSize(if (focused) 13.dp else 10.dp).background(Color.White, GlassShape.pill))
+                }
             }
             if (preview != null) Text("确认跳转 · 返回取消", color = Brand, fontSize = 9.sp, lineHeight = 11.sp, fontWeight = FontWeight.Medium)
         }

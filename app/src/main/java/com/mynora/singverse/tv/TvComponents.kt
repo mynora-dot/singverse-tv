@@ -9,6 +9,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -51,8 +53,8 @@ internal val OnBrand = Glass.onBrand
 internal val Brand = Glass.brand
 internal val Accent = Glass.cyan
 internal val Focus = Color(0xFFFFFFFF)
-internal val Success = Color(0xFF30B65A)
-internal val Danger = Color(0xFFE53935)
+internal val Success = Color(0xFF34C759)
+internal val Danger = Color(0xFFFF453A)
 internal val Hairline = Glass.edgeBottom
 
 internal object TvShape {
@@ -116,19 +118,20 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
     if (!focused) return this
     return this.drawWithCache {
         val outline = shape.createOutline(size, layoutDirection, this)
-        val outerPx = 2.dp.toPx()
-        val innerPx = 1.dp.toPx()
+        val ringPx = 2.dp.toPx()
+        val haloPx = 3.5.dp.toPx()
         onDrawWithContent {
             drawContent()
-            drawOutline(outline, Color(0xD9FFFFFF), style = Stroke(width = innerPx))
-            drawOutline(outline, Glass.focusRing, style = Stroke(width = outerPx))
+            // tvOS-style silver-white hairline with a barely-there outer halo
+            drawOutline(outline, Color(0x2EFFFFFF), style = Stroke(width = haloPx))
+            drawOutline(outline, Glass.focusRing, style = Stroke(width = ringPx))
         }
     }
 }
 
 @Composable internal fun SingVerseTvTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = lightColorScheme(
+        colorScheme = darkColorScheme(
             primary = Brand,
             onPrimary = OnBrand,
             background = Ink,
@@ -157,6 +160,8 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     val content = when {
         !enabled -> Muted.copy(alpha = .48f)
         selected -> OnBrand
@@ -165,12 +170,12 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
         else -> Paper
     }
     val surfaceModifier = when {
-        !enabled -> Modifier.glassSurface(shape, intensity = 0.45f, base = Color(0x48FFFFFF))
+        !enabled -> Modifier.glassSurface(shape, intensity = 0.45f, base = Color(0x45181C24))
         selected -> Modifier.brandGlassSurface(shape, focused = focused)
         danger -> Modifier.glassSurface(
             shape,
             highlighted = focused,
-            base = if (focused) Color(0x28E53935) else Color(0x12E53935),
+            base = if (focused) Color(0x38FF453A) else Color(0x20FF453A),
             elevation = if (focused) 4.dp else 0.dp,
         )
         quiet -> if (focused) Modifier.glassSurface(shape, highlighted = true, base = Glass.surfaceFocus, elevation = 4.dp) else Modifier
@@ -184,11 +189,12 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
     Button(
         onClick = onClick,
         enabled = enabled,
+        interactionSource = interaction,
         modifier = modifier
             .heightIn(min = 34.dp)
             .tvFocusTarget("action:$focusKey")
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused && enabled, scaleTarget = 1.028f, liftDp = 0.8.dp)
+            .tvSpringFocus(focused && enabled, scaleTarget = if (pressed) 0.975f else 1.028f, liftDp = 0.8.dp)
             .then(surfaceModifier)
             .tvFocus(focused, shape),
         scale = ButtonDefaults.scale(focusedScale = 1f),
@@ -360,10 +366,10 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
     }
     Box(
         modifier
-            .shadow(elevation = 3.dp, shape = shape, ambientColor = Color(0x141B2438), spotColor = Color(0x1E1B2438), clip = false)
+            .shadow(elevation = 4.dp, shape = shape, ambientColor = Color(0x66000000), spotColor = Color(0x80000000), clip = false)
             .clip(shape)
             .background(Brush.linearGradient(listOf(c1, c2)))
-            .border(0.75.dp, Color(0x88FFFFFF), shape),
+            .border(0.75.dp, Color(0x26FFFFFF), shape),
     ) {
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), "歌曲封面", Modifier.fillMaxSize(), contentScale = contentScale)
         else MusicMark(Modifier.size(26.dp).align(Alignment.Center), tint = Paper.copy(alpha = 0.34f))
@@ -530,7 +536,7 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
             Box(
                 Modifier
                     .width(80.dp)
-                    .background(Color(0x101D2438), GlassShape.pill)
+                    .background(Color(0x18FFFFFF), GlassShape.pill)
                     .padding(horizontal = 8.dp, vertical = 3.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
@@ -566,8 +572,8 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
         }
     }
     val pastelTones = listOf(
-        Color(0xFFFAD8DF), Color(0xFFFCE2CE), Color(0xFFD9E6FC),
-        Color(0xFFD3EFE6), Color(0xFFE7DCFA), Color(0xFFF6E7D0),
+        Color(0xFF2C1B22), Color(0xFF2B2118), Color(0xFF182433),
+        Color(0xFF162924), Color(0xFF231C33), Color(0xFF2A241A),
     )
     val tone = pastelTones[(tag.optString("id").hashCode() ushr 1) % pastelTones.size]
     Button(
@@ -593,7 +599,7 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
         Box(Modifier.fillMaxWidth().heightIn(min = 90.dp).clip(TvShape.card), contentAlignment = Alignment.CenterStart) {
             if (bitmap != null) {
                 Image(bitmap!!.asImageBitmap(), "${tag.optString("name")}分类封面", Modifier.matchParentSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x38FFFFFF), Color(0xD6F6F8FC)))))
+                Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x280B0D11), Color(0xE00B0D11)))))
             } else {
                 Text(tag.optString("name").take(2), color = Paper.copy(alpha = .07f), fontSize = 36.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterEnd).padding(14.dp))
             }
@@ -637,12 +643,12 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
             .shadow(elevation = 6.dp, shape = shape, ambientColor = Glass.shadowAmbient, spotColor = Glass.shadowSpot, clip = false)
             .clip(shape)
             .background(Brush.linearGradient(listOf(c1, c2)))
-            .border(1.dp, Color(0xCCFFFFFF), shape),
+            .border(1.dp, Color(0x2EFFFFFF), shape),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), "${artist.optString("name")}${if (kind == "portrait") "头像" else if (derived) "由头像生成的背景" else "背景图"}", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
         else if (kind == "portrait") Text(artist.optString("name").take(1), color = Paper.copy(alpha = 0.72f), fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.SemiBold)
-        if (derived) Box(Modifier.fillMaxSize().background(Color(0x66FFFFFF)))
+        if (derived) Box(Modifier.fillMaxSize().background(Color(0x660B0D11)))
         if (derived) Text(
             "头像生成背景",
             color = Paper,

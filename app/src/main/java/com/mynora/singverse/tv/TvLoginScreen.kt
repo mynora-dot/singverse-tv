@@ -59,7 +59,7 @@ private val LoginMuted = Muted
         val scale = minOf(maxWidth.value / 960f, maxHeight.value / 540f)
         CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
             Box(Modifier.fillMaxSize().background(LoginInk)) {
-                AmbientStage(accent = true, animateDrift = app.foreground)
+                AmbientStage(Modifier.tvHazeSource(LocalTvHazeState.current), accent = true, animateDrift = app.foreground)
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 60.dp, vertical = 32.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -189,7 +189,7 @@ private val LoginMuted = Muted
         Column(
             Modifier
                 .width(292.dp)
-                .glassSurface(GlassShape.dialog, highlighted = true, base = Glass.surfaceFloat, elevation = 14.dp)
+                .glassSurface(GlassShape.dialog, highlighted = true, base = Glass.surfaceFloat, elevation = 8.dp, backdropBlur = true)
                 .padding(horizontal = 22.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -347,7 +347,7 @@ private val LoginMuted = Muted
             .align(Alignment.TopEnd)
             .padding(end = 64.dp, top = if (state.mfaRequired) 152.dp else 104.dp)
             .width(430.dp)
-            .glassSurface(TvShape.panel, base = Glass.surfaceFloat, elevation = 12.dp)
+            .glassSurface(TvShape.panel, base = Glass.surfaceFloat, elevation = 8.dp, backdropBlur = true)
             .padding(20.dp),
     ) {
         if (!state.mfaRequired) {
@@ -451,7 +451,7 @@ private val LoginMuted = Muted
                                 keyboard?.hide(); doneFocus.requestFocus(); true
                             } else false
                         }
-                        .glassSurface(TvShape.control, base = Color(0xCCFFFFFF), elevation = 2.dp)
+                        .glassSurface(TvShape.control, base = Color(0xCC10131A), elevation = 0.dp)
                         .padding(14.dp),
                     textStyle = TextStyle(color = Ivory, fontSize = 18.sp),
                     singleLine = true,

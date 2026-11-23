@@ -112,7 +112,7 @@ import java.util.Locale
             enter = fadeIn(tween(260)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 },
             exit = fadeOut(tween(200)) + slideOutHorizontally(tween(220)) { it / 3 },
         ) {
-            PlayerSideRail(app, Modifier.fillMaxWidth())
+            PlayerSideRail(app, audioOnly, Modifier.fillMaxWidth())
         }
         AnimatedVisibility(
             visible = !audioOnly && !controlsVisible && app.playerState != "IDLE",
@@ -137,8 +137,8 @@ import java.util.Locale
                         translationY = (1f - p) * 24.dp.toPx()
                     }
                     .background(
-                        if (audioOnly) Brush.verticalGradient(listOf(Color.Transparent, Color(0x66E7ECF6)))
-                        else Brush.verticalGradient(listOf(Color.Transparent, Color(0x6606070B)))
+                        if (audioOnly) Brush.verticalGradient(listOf(Color.Transparent, Color(0x990B0D11)))
+                        else Brush.verticalGradient(listOf(Color.Transparent, Color(0xE0080A0E)))
                     )
                     .padding(horizontal = 24.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -235,15 +235,18 @@ import java.util.Locale
     val coverPath = song?.optString("coverPath").orEmpty()
     val revision = song?.optString("revision").orEmpty()
     var ambientPair by remember(songId) { mutableStateOf(fallbackAmbientColors(songId)) }
+    var stageBackdrop by remember(app.client.base, coverPath, revision) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(app.client.base, songId, coverPath, revision) {
         ambientPair = fallbackAmbientColors(songId)
         if (coverPath.isNotBlank()) {
-            val extracted = runCatching {
-                val bmp = app.client.image(coverPath, revision)
-                withContext(Dispatchers.Default) { extractAmbientColors(bmp) }
-            }.getOrNull()
-            if (extracted != null) ambientPair = extracted
-        }
+            val bmp = runCatching { app.client.image(coverPath, revision) }.getOrNull()
+            if (bmp != null) {
+                val extracted = withContext(Dispatchers.Default) { cachedAmbientColors("$songId:$revision", bmp) }
+                if (extracted != null) ambientPair = extracted
+                stageBackdrop = if (GlassTier.current.supportsBackdropBlur) bmp
+                else withContext(Dispatchers.Default) { softenedArtistBackground(bmp) }
+            } else stageBackdrop = null
+        } else stageBackdrop = null
     }
     val coverScale by animateFloatAsState(
         targetValue = if (app.playing) 1.02f else 0.96f,
@@ -252,10 +255,12 @@ import java.util.Locale
     )
     Box(Modifier.fillMaxSize()) {
         AmbientStage(
+            modifier = Modifier.tvHazeSource(LocalTvHazeState.current),
             accent = true,
             primaryGlow = ambientPair.first,
             secondaryGlow = ambientPair.second,
             animateDrift = app.playing && app.foreground,
+            backdropBitmap = stageBackdrop,
         )
         Row(
             Modifier.fillMaxWidth().padding(start = 42.dp, end = 232.dp, top = 80.dp),
@@ -401,19 +406,19 @@ import java.util.Locale
     }
 }
 
-@Composable private fun PlayerSideRail(app: TvApp, modifier: Modifier) {
+@Composable private fun PlayerSideRail(app: TvApp, audioOnly: Boolean, modifier: Modifier) {
     val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
     val playback = app.snapshot.optJSONObject("playback")
     val current = if (playback?.optBoolean("confirmed") == true) playback.optString("itemId")
     else queue.firstOrNull { it.optString("status") == "PLAYING" }?.optString("id").orEmpty()
     val next = tvNextQueuedItem(queue, { it.optString("status") }, { it.optString("id") }, current)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.End) {
-        if (next != null) NextSongCard(app, next, Modifier.fillMaxWidth()) else Spacer(Modifier.height(64.dp))
-        PlayerPhoneCard(app, Modifier.width(136.dp))
+        if (next != null) NextSongCard(app, next, audioOnly, Modifier.fillMaxWidth()) else Spacer(Modifier.height(64.dp))
+        PlayerPhoneCard(app, audioOnly, Modifier.width(136.dp))
     }
 }
 
-@Composable private fun NextSongCard(app: TvApp, item: JSONObject, modifier: Modifier = Modifier) {
+@Composable private fun NextSongCard(app: TvApp, item: JSONObject, audioOnly: Boolean, modifier: Modifier = Modifier) {
     val song = item.optJSONObject("song")
     val ending = app.duration > 0 && app.duration - app.position in 0..30000
     Row(
@@ -421,9 +426,10 @@ import java.util.Locale
             .glassSurface(
                 TvShape.card,
                 highlighted = ending,
-                base = Glass.mediaSafe,
+                base = if (audioOnly) Glass.surfaceFloat else Glass.mediaSafe,
                 tintAccent = if (ending) Brand.copy(alpha = 0.14f) else null,
-                elevation = 10.dp,
+                elevation = 8.dp,
+                backdropBlur = audioOnly,
             )
             .padding(11.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -438,10 +444,10 @@ import java.util.Locale
     }
 }
 
-@Composable private fun PlayerPhoneCard(app: TvApp, modifier: Modifier = Modifier) {
+@Composable private fun PlayerPhoneCard(app: TvApp, audioOnly: Boolean, modifier: Modifier = Modifier) {
     Column(
         modifier
-            .glassSurface(TvShape.card, base = Glass.mediaSafe, elevation = 10.dp)
+            .glassSurface(TvShape.card, base = if (audioOnly) Glass.surfaceFloat else Glass.mediaSafe, elevation = 8.dp, backdropBlur = audioOnly)
             .padding(11.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -457,7 +463,7 @@ import java.util.Locale
             if (app.invitation.isNotBlank() && app.online) Qr(app.invitation, Modifier.fillMaxSize())
             else Text(
                 if (app.snapshot.optString("status") == "ENDED") "本场已结束" else if (app.invitationLoading) "生成邀请中…" else "更多设置中重试",
-                color = Paper,
+                color = Ink,
                 fontSize = 10.sp,
             )
         }

@@ -69,6 +69,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.tv:tv-material:1.0.0")
+    implementation("dev.chrisbanes.haze:haze:1.6.10")
 }
 
 // Production packages always use the durable release key from the release environment.

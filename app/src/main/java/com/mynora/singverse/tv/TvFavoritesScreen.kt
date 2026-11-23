@@ -17,18 +17,8 @@ import org.json.JSONObject
 @Composable internal fun FavoritesContent(app: TvApp, modifier: Modifier = Modifier) {
     var removing by remember { mutableStateOf<JSONObject?>(null) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    if (app.favoritesReady) "NAS 共享收藏 · ${app.favoriteSongs().size} 首" else "NAS 共享收藏",
-                    color = Paper,
-                    fontSize = 21.sp,
-                    lineHeight = 28.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text("与此 NAS 的后台、手机共用", color = Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
-            }
-            Action(if (app.favoritesLoading) "正在读取…" else "刷新收藏", enabled = !app.favoritesLoading && !app.favoriteSaving) { app.refreshFavorites() }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+            Action(if (app.favoritesLoading) "正在读取…" else "刷新收藏", enabled = !app.favoritesLoading && !app.favoriteSaving, quiet = true, textSize = 12.5.sp) { app.refreshFavorites() }
         }
         if (app.favoritesError.isNotBlank()) Text("收藏读取或保存失败：${app.favoritesError}。当前内容可能尚未更新。", color = Muted, fontSize = 13.sp)
         val favorites = app.favoriteSongs()

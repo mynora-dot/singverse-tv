@@ -47,7 +47,10 @@ import androidx.tv.material3.ButtonDefaults
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatWriter
+import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.*
 
 internal fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
@@ -120,11 +123,42 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
 }
 
 @Composable internal fun TvScreen(app: TvApp, focusMemory: TvFocusMemory = remember(app.client.base) { TvFocusMemory() }) {
+    val hazeState = rememberHazeState()
+    val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
+    val ambientSong = app.selected
+        ?: queue.firstOrNull { it.optString("status") == "PLAYING" }?.optJSONObject("song")
+        ?: queue.firstOrNull { it.optString("status") in listOf("HANDOFF", "WAITING") }?.optJSONObject("song")
+        ?: app.favoriteSongs().firstOrNull()
+    val ambientId = ambientSong?.optString("id").orEmpty()
+    val ambientCover = ambientSong?.optString("coverPath").orEmpty()
+    val ambientRev = ambientSong?.optString("revision").orEmpty()
+    var ambientColors by remember(ambientId) { mutableStateOf(fallbackAmbientColors(ambientId)) }
+    var backdropBitmap by remember(app.client.base, ambientCover, ambientRev) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(app.client.base, ambientId, ambientCover, ambientRev) {
+        ambientColors = fallbackAmbientColors(ambientId)
+        if (ambientCover.isNotBlank()) {
+            val bmp = runCatching { app.client.image(ambientCover, ambientRev) }.getOrNull()
+            if (bmp != null) {
+                val extracted = withContext(Dispatchers.Default) { cachedAmbientColors("$ambientId:$ambientRev", bmp) }
+                if (extracted != null) ambientColors = extracted
+                backdropBitmap = if (GlassTier.current.supportsBackdropBlur) bmp
+                else withContext(Dispatchers.Default) { softenedArtistBackground(bmp) }
+            } else backdropBitmap = null
+        } else backdropBitmap = null
+    }
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
-        AmbientStage()
+        AmbientStage(
+            modifier = Modifier.tvHazeSource(hazeState),
+            primaryGlow = ambientColors.first,
+            secondaryGlow = ambientColors.second,
+            backdropBitmap = backdropBitmap,
+        )
         val density = LocalDensity.current
         val scale = minOf(maxWidth.value / 960f, maxHeight.value / 540f)
-        CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
+        CompositionLocalProvider(
+            LocalDensity provides Density(density.density * scale, density.fontScale),
+            LocalTvHazeState provides hazeState,
+        ) {
             Box(Modifier.fillMaxSize()) {
                 TvScreenContent(app, focusMemory)
                 PartyReactionOverlay(app)
@@ -162,12 +196,12 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
     val homeFocus = remember { FocusRequester() }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val selectedNavigation = when {
-        app.page in listOf("历史记录", "热门歌曲") -> "首页"
+        app.page in listOf("收藏", "历史记录", "热门歌曲") -> "首页"
         app.selected != null || app.page in listOf("找歌", "歌手", "分类", "歌单", "点歌") -> "点歌"
         else -> app.page
     }
     val activityFocusItems = when (app.page) {
-        "首页" -> app.favoriteSongs().take(4) + app.homeHistorySongs.take(3) + app.homePopularSongs.take(4)
+        "首页" -> app.favoriteSongs().take(4) + app.homeHistorySongs.take(4) + app.homePopularSongs.take(4)
         "历史记录" -> app.homeHistorySongs
         "热门歌曲" -> app.homePopularSongs
         else -> emptyList()
@@ -302,12 +336,12 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                     Row(
                         Modifier
                             .align(Alignment.Center)
-                            .glassSurface(GlassShape.pill, highlighted = false, intensity = 0.92f, base = Glass.surfaceFloat, elevation = 4.dp)
+                            .glassSurface(GlassShape.pill, highlighted = false, intensity = 0.92f, base = Glass.surfaceFloat, elevation = 4.dp, backdropBlur = true)
                             .padding(horizontal = 5.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        listOf("首页", "点歌", "收藏", "已点", "设置").forEach { page ->
+                        listOf("首页", "点歌", "已点", "设置").forEach { page ->
                             TvNavigation(
                                 if (page == "已点") "已点 ${queuedSongCount(app)}" else page,
                                 (if (page == selectedNavigation) Modifier.focusRequester(homeFocus) else Modifier)
@@ -334,7 +368,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                         if (app.page != "首页") HomeButton("手机点歌", focusKey = "phone") { invitationOpen = true; app.ensureInvitation() }
                         Row(
                             Modifier
-                                .glassSurface(GlassShape.pill, intensity = 0.78f, base = Glass.surfaceCard, elevation = 2.dp)
+                                .glassSurface(GlassShape.pill, intensity = 0.78f, base = Glass.surfaceCard, elevation = 2.dp, backdropBlur = true)
                                 .padding(horizontal = 10.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -409,7 +443,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(26.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(206.dp).clip(TvShape.card).background(Color.White).padding(10.dp), contentAlignment = Alignment.Center) {
                     if (app.invitation.isNotEmpty() && app.online) Qr(app.invitation, Modifier.fillMaxSize())
-                    else Text(if (app.invitationLoading) "正在生成邀请…" else if (!app.online) "网络异常" else "邀请待刷新", color = Paper, fontSize = 15.sp)
+                    else Text(if (app.invitationLoading) "正在生成邀请…" else if (!app.online) "网络异常" else "邀请待刷新", color = Ink, fontSize = 15.sp)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                     Text("让亲友自己选一首", color = Paper, fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
@@ -473,34 +507,26 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     val firstSongId = covers.firstOrNull()?.getString("id")
     val lastSongId = covers.lastOrNull()?.getString("id")
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("点歌中心", color = Paper, fontSize = 24.sp, lineHeight = 31.sp, fontWeight = FontWeight.SemiBold)
-            Text(librarySummary(app), color = Muted, fontSize = 12.5.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.weight(1f))
-            if (app.snapshot.optString("status") == "ENDED") Action("开始新聚会", selected = true, textSize = 12.5.sp) { app.newSession() }
-            Action(
-                "刷新曲库",
-                modifier = Modifier.focusProperties {
-                    lastSongId?.let { memory.targets["$page:song:$it"] }?.let { down = it }
-                },
-                quiet = true,
-                textSize = 12.5.sp,
-            ) { app.run { app.loadHome(); app.loadSongs(); app.loadTags() } }
-        }
         SongEntryRow(app, searchModifier = Modifier.focusProperties {
             firstSongId?.let { memory.targets["$page:song:$it"] }?.let { down = it }
         })
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SectionTitle("曲库", "按封面快速点唱")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle("曲库", "按封面快速点唱")
+                Spacer(Modifier.weight(1f))
+                if (app.snapshot.optString("status") == "ENDED") Action("开始新聚会", selected = true, textSize = 12.5.sp) { app.newSession() }
+                Action(
+                    "刷新曲库",
+                    modifier = Modifier.focusProperties {
+                        lastSongId?.let { memory.targets["$page:song:$it"] }?.let { down = it }
+                    },
+                    quiet = true,
+                    textSize = 12.5.sp,
+                ) { app.run { app.loadHome(); app.loadSongs(); app.loadTags() } }
+            }
             LibraryShelf(app, covers, Modifier.weight(1f))
         }
     }
-}
-
-private fun librarySummary(app: TvApp): String {
-    val songs = if (app.homeTotal > 0) "${app.homeTotal} 首" else ""
-    val playlists = if (app.homePlaylists.isNotEmpty()) "${app.homePlaylists.size} 个歌单" else ""
-    return listOf(songs, playlists).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { "等待同步" }
 }
 
 @Composable private fun SongEntryRow(app: TvApp, searchModifier: Modifier) {
@@ -663,7 +689,7 @@ private fun librarySummary(app: TvApp): String {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Row(
             Modifier
-                .then(if (compact) Modifier.widthIn(max = 640.dp).fillMaxWidth() else Modifier.fillMaxWidth())
+                .fillMaxWidth()
                 .height(barHeight)
                 .glassSurface(
                     GlassShape.pill,
@@ -671,6 +697,7 @@ private fun librarySummary(app: TvApp): String {
                     intensity = if (idle) 0.60f else 0.90f,
                     base = if (idle) Glass.surfaceCard else Glass.surfaceFloat,
                     elevation = if (idle) 2.dp else 5.dp,
+                    backdropBlur = true,
                 )
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -724,7 +751,13 @@ private fun librarySummary(app: TvApp): String {
         val size = minOf(constraints.maxWidth, constraints.maxHeight).coerceAtLeast(1)
         val bitmap = remember(value, size) {
             runCatching {
-                val matrix = MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, size, size, mapOf(EncodeHintType.ERROR_CORRECTION to "M"))
+                val matrix = MultiFormatWriter().encode(
+                    value,
+                    BarcodeFormat.QR_CODE,
+                    size,
+                    size,
+                    mapOf(EncodeHintType.ERROR_CORRECTION to "M", EncodeHintType.MARGIN to 1),
+                )
                 val pixels = IntArray(matrix.width * matrix.height) { index ->
                     if (matrix[index % matrix.width, index / matrix.width]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
                 }
@@ -902,7 +935,7 @@ private fun librarySummary(app: TvApp): String {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.fillMaxWidth().heightIn(min = 98.dp).clip(TvShape.panel).glassSurface(TvShape.panel, base = Glass.surfaceCard)) {
             ArtistArtwork(app, artist, "background", Modifier.matchParentSize())
-            Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xF0F4F6FB), Color(0x99F4F6FB)))))
+            Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0xF20B0D11), Color(0x880B0D11)))))
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 ArtistArtwork(app, artist, "portrait", Modifier.size(60.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -991,10 +1024,10 @@ private fun librarySummary(app: TvApp): String {
     val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
     val waiting = tvWaitingQueue(queue) { it.optString("status") }
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" } ?: queue.firstOrNull { it.optString("status") == "HANDOFF" }
+    val showTopRow = compact || (!compact && fair && waiting.size > 1) || (current == null && waiting.isNotEmpty())
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (showTopRow) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (compact) SectionTitle("接下来", "${waiting.size} 首待唱")
-            else Heading("待唱队列", if (fair) "${waiting.size} 首待唱 · 按人轮流，各自歌曲保持点歌顺序" else "${waiting.size} 首待唱 · 选择歌曲可调整顺序")
             Spacer(Modifier.weight(1f))
             if (!compact && fair && waiting.size > 1) Action("公平打乱", quiet = true, textSize = 13.sp) { app.command("SHUFFLE") }
             if (current == null && waiting.isNotEmpty()) Action("开始下一首", selected = true, shape = GlassShape.pill, textSize = 13.sp) { app.command("START") }
@@ -1134,8 +1167,6 @@ private fun librarySummary(app: TvApp): String {
     }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(Modifier.width(196.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Heading("设置", "这台电视与当前聚会")
-            Spacer(Modifier.height(4.dp))
             listOf("连接", "播放设置", "聚会管理", "本场参与者", "设备信息", "应用更新").forEach { label ->
                 SettingsMenuItem(label, active = label == group) { group = label }
             }
@@ -1198,7 +1229,7 @@ private fun librarySummary(app: TvApp): String {
                             if (app.updateDownloading) {
                                 val percent = (100 * app.updateDownloaded / release.size.coerceAtLeast(1L)).coerceIn(0, 100)
                                 Column(
-                                    Modifier.fillMaxWidth().glassSurface(TvShape.row, base = Color(0x88FFFFFF)).padding(14.dp),
+                                    Modifier.fillMaxWidth().glassSurface(TvShape.row, base = Glass.surfaceCard).padding(14.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Text("下载 $percent% · ${app.updateDownloaded / 1048576} / ${release.size / 1048576} MB", color = Brand, fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
@@ -1228,7 +1259,7 @@ private fun librarySummary(app: TvApp): String {
                         if (app.participants.isEmpty()) EmptyState("还没有亲友加入", "通过「手机点歌」邀请亲友。")
                         app.participants.forEach { participant ->
                             Row(
-                                Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Color(0x88FFFFFF), elevation = 0.dp).padding(12.dp),
+                                Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Glass.surfaceCard, elevation = 0.dp).padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1261,8 +1292,8 @@ private fun librarySummary(app: TvApp): String {
             .then(
                 when {
                     focused -> Modifier.glassSurface(shape, highlighted = true, base = Glass.surfaceFocus, elevation = 4.dp)
-                    active -> Modifier.glassSurface(shape, highlighted = false, intensity = 0.85f, base = Color(0xD9FFFFFF), elevation = 2.dp)
-                    else -> Modifier.glassSurface(shape, intensity = 0.45f, base = Color(0x45FFFFFF), elevation = 0.dp)
+                    active -> Modifier.glassSurface(shape, highlighted = false, intensity = 0.85f, base = Glass.surfaceSelected, elevation = 0.dp)
+                    else -> Modifier.glassSurface(shape, intensity = 0.45f, base = Color(0x0DFFFFFF), elevation = 0.dp)
                 }
             )
             .tvFocus(focused, shape),
@@ -1301,7 +1332,7 @@ private fun librarySummary(app: TvApp): String {
 
 @Composable private fun SettingActionRow(title: String, description: String, action: @Composable () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Color(0x88FFFFFF), elevation = 0.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Glass.surfaceCard, elevation = 0.dp).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1315,7 +1346,7 @@ private fun librarySummary(app: TvApp): String {
 
 @Composable private fun InfoRow(label: String, value: String) {
     Row(
-        Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Color(0x88FFFFFF), elevation = 0.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Glass.surfaceCard, elevation = 0.dp).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, Modifier.width(110.dp), color = Muted, fontSize = 13.sp, lineHeight = 18.sp)

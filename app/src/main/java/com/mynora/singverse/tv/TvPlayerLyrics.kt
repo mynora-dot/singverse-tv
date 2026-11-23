@@ -80,7 +80,7 @@ import kotlin.math.sin
                 else current.words.forEach { word ->
                     withStyle(
                         SpanStyle(
-                            color = if (word.at <= options.lyricPosition) Paper else Paper.copy(alpha = 0.30f),
+                            color = if (word.at <= options.lyricPosition) Paper else Paper.copy(alpha = 0.38f),
                         )
                     ) { append(word.text) }
                 }
@@ -88,8 +88,8 @@ import kotlin.math.sin
             Text(
                 text,
                 color = Paper,
-                fontSize = 26.sp,
-                lineHeight = 34.sp,
+                fontSize = 28.sp,
+                lineHeight = 37.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -120,9 +120,9 @@ import kotlin.math.sin
         next?.let {
             Text(
                 it.text,
-                color = Paper.copy(alpha = .48f),
-                fontSize = 19.sp,
-                lineHeight = 26.sp,
+                color = Muted,
+                fontSize = 20.sp,
+                lineHeight = 27.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
