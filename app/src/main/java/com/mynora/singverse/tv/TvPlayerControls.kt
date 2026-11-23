@@ -3,6 +3,7 @@ package com.mynora.singverse.tv
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +19,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -72,11 +74,23 @@ import androidx.tv.material3.Text
         hasSong -> "继续"
         else -> "播放"
     }
-    Column(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .glassSurface(GlassShape.panel, highlighted = false, base = if (audioOnly) Glass.surfaceFloat else Glass.mediaSafe, elevation = 14.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
         PlayerProgress(app)
-        Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            PlayerControlButton(label, if (pause) "pause" else if (retrying) "restart" else "play", "player:pause",
-                Modifier.focusRequester(primaryFocus), enabled = hasSong || confirming) {
+        Row(Modifier.fillMaxWidth().height(42.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PlayerControlButton(
+                label,
+                if (pause) "pause" else if (retrying) "restart" else "play",
+                "player:pause",
+                Modifier.focusRequester(primaryFocus),
+                primary = true,
+                enabled = hasSong || confirming,
+            ) {
                 when {
                     confirming -> app.command("START")
                     retrying -> app.retryPlayback()
@@ -88,11 +102,25 @@ import androidx.tv.material3.Text
             PlayerControlButton("切歌", "next", "player:next", enabled = hasSong || waiting != null) { app.command("NEXT") }
             PlayerControlButton("已点", "queue", "player:queue", onClick = onQueue)
             val favorite = songId.isNotBlank() && app.isFavorite(songId)
-            PlayerControlButton(if (favorite) "已收藏" else "收藏", "favorite", "player:favorite", selected = favorite, enabled = songId.isNotBlank() && !app.favoriteSaving) { app.toggleFavorite() }
+            PlayerControlButton(
+                if (favorite) "已收藏" else "收藏",
+                "favorite",
+                "player:favorite",
+                selected = favorite,
+                enabled = songId.isNotBlank() && !app.favoriteSaving,
+            ) { app.toggleFavorite() }
             Spacer(Modifier.weight(1f))
-            Row(Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                PlayerControlButton("原唱", "original", "player:role:original", selected = app.activeAudioRole == "original", enabled = app.canUseAudioRole(true)) { app.useAudioRole(true) }
-                PlayerControlButton("伴奏", "backing", "player:role:backing", selected = app.activeAudioRole == "backing", enabled = app.canUseAudioRole(false)) { app.useAudioRole(false) }
+            // Segmented Liquid Glass track for Vocal / Backing role switch
+            Row(
+                Modifier
+                    .background(Color(0x141D2438), GlassShape.pill)
+                    .border(0.75.dp, Color(0x1E1D2438), GlassShape.pill)
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PlayerControlButton("原唱", "original", "player:role:original", selected = app.activeAudioRole == "original", enabled = app.canUseAudioRole(true), compact = true) { app.useAudioRole(true) }
+                PlayerControlButton("伴奏", "backing", "player:role:backing", selected = app.activeAudioRole == "backing", enabled = app.canUseAudioRole(false), compact = true) { app.useAudioRole(false) }
             }
             Spacer(Modifier.weight(1f))
             PlayerControlButton(if (audioOnly) "歌词" else "歌词字幕", "lyrics", "player:lyrics", onClick = onLyrics)
@@ -113,10 +141,20 @@ import androidx.tv.material3.Text
     val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     BackHandler(enabled = focused && preview != null) { preview = null }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(32.dp).tvFocusTarget("player:progress")
+        Modifier
+            .fillMaxWidth()
+            .height(30.dp)
+            .tvFocusTarget("player:progress")
             .onFocusChanged { focused = it.isFocused; if (!it.isFocused) preview = null }
+            .tvSpringFocus(focused && windowFocused, scaleTarget = 1.012f, liftDp = 0.5.dp)
+            .glassSurface(
+                GlassShape.pill,
+                highlighted = focused && windowFocused,
+                intensity = if (focused) 1f else 0.68f,
+                base = if (focused && windowFocused) Glass.surfaceFocus else Color(0x78FFFFFF),
+                elevation = if (focused && windowFocused) 8.dp else 0.dp,
+            )
             .tvFocus(focused && windowFocused, GlassShape.pill)
-            .glassSurface(GlassShape.pill)
             .onPreviewKeyEvent { event ->
                 when (event.key) {
                     Key.DirectionLeft, Key.DirectionRight -> {
@@ -139,18 +177,29 @@ import androidx.tv.material3.Text
                 contentDescription = "播放进度"
                 progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
                 stateDescription = if (preview != null) "预览 ${controlTime(position)}，确认跳转，返回取消" else "${controlTime(position)} / ${controlTime(duration)}，左右预览"
-            }.focusable().padding(horizontal = 8.dp),
+            }
+            .focusable()
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(controlTime(position), color = if (preview != null) Primary else Paper, fontSize = 11.sp, lineHeight = 15.sp)
+        Text(controlTime(position), color = if (preview != null) Brand else Paper, fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.SemiBold)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Box(Modifier.fillMaxWidth().height(4.dp).background(Paper.copy(alpha = .16f), RoundedCornerShape(2.dp))) {
-                Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(if (preview != null) Focus else Primary, RoundedCornerShape(2.dp)))
+            Box(Modifier.fillMaxWidth().height(5.dp).background(Paper.copy(alpha = .14f), GlassShape.pill)) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(fraction)
+                        .fillMaxHeight()
+                        .background(
+                            if (preview != null) Brush.horizontalGradient(listOf(Brand, Glass.brandCoral))
+                            else Brush.horizontalGradient(listOf(Glass.brandVivid, Glass.brandCoral)),
+                            GlassShape.pill,
+                        ),
+                )
             }
-            if (preview != null) Text("确认跳转 · 返回取消", color = Muted, fontSize = 9.sp, lineHeight = 11.sp)
+            if (preview != null) Text("确认跳转 · 返回取消", color = Brand, fontSize = 9.sp, lineHeight = 11.sp, fontWeight = FontWeight.Medium)
         }
-        Text(controlTime(duration), color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+        Text(controlTime(duration), color = Muted, fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -159,39 +208,63 @@ import androidx.tv.material3.Text
     icon: String,
     focusKey: String,
     modifier: Modifier = Modifier,
+    primary: Boolean = false,
     selected: Boolean = false,
+    compact: Boolean = false,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = GlassShape.pill
     val windowFocused = LocalWindowInfo.current.isWindowFocused
+    val isVisuallyFocused = focused && windowFocused
+    val onAccent = enabled && (primary || (selected && compact))
+    val textColor = if (onAccent) OnBrand else Paper
+    val surfaceModifier = when {
+        !enabled -> Modifier.glassSurface(shape, intensity = 0.36f, base = Glass.surfaceCard.copy(alpha = 0.45f), elevation = 0.dp)
+        primary -> Modifier.brandGlassSurface(shape, focused = isVisuallyFocused)
+        selected && compact -> Modifier.brandGlassSurface(shape, focused = isVisuallyFocused)
+        selected -> Modifier.glassSurface(shape, highlighted = isVisuallyFocused, base = if (isVisuallyFocused) Glass.surfaceFocus else Glass.surfaceFloat, tintAccent = Brand.copy(alpha = 0.14f), elevation = if (isVisuallyFocused) 10.dp else 3.dp)
+        else -> Modifier.glassSurface(shape, highlighted = isVisuallyFocused, intensity = if (isVisuallyFocused) 1f else 0.72f, base = if (isVisuallyFocused) Glass.surfaceFocus else Glass.surfaceFloat, elevation = if (isVisuallyFocused) 10.dp else 3.dp)
+    }
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(42.dp).tvFocusTarget("action:$focusKey").onFocusChanged { focused = it.isFocused }
-            .tvFocus(focused && windowFocused, shape).semantics {
+        modifier = modifier
+            .height(if (compact) 34.dp else 38.dp)
+            .tvFocusTarget("action:$focusKey")
+            .onFocusChanged { focused = it.isFocused }
+            .tvSpringFocus(isVisuallyFocused && enabled, scaleTarget = 1.04f, liftDp = 0.8.dp)
+            .then(surfaceModifier)
+            .tvFocus(isVisuallyFocused, shape)
+            .semantics {
                 this.selected = selected
                 if (!enabled) stateDescription = "不可用"
             },
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(shape),
         colors = ButtonDefaults.colors(
-            containerColor = if (selected) Glass.surfaceSelected else Glass.cardSurface,
-            contentColor = Paper,
-            focusedContainerColor = Glass.surfaceFocus,
-            focusedContentColor = Paper,
-            disabledContainerColor = Glass.surface.copy(alpha = Glass.surface.alpha * .4f),
+            containerColor = Color.Transparent,
+            contentColor = textColor,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = textColor,
+            disabledContainerColor = Color.Transparent,
             disabledContentColor = Muted.copy(alpha = .5f),
         ),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = if (compact) 12.dp else 13.dp, vertical = 4.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (selected) HomeGlyph("check", Modifier.size(14.dp), if (enabled) Accent else LocalContentColor.current)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (selected) HomeGlyph("check", Modifier.size(13.dp), if (onAccent) OnBrand else if (enabled) Brand else LocalContentColor.current)
             else PlayerControlGlyph(icon, LocalContentColor.current)
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    label,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = if (primary || selected || isVisuallyFocused) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (!enabled) Text("不可用", fontSize = 8.sp, lineHeight = 10.sp)
             }
         }
@@ -199,17 +272,17 @@ import androidx.tv.material3.Text
 }
 
 @Composable private fun PlayerControlGlyph(kind: String, color: Color) {
-    Canvas(Modifier.size(14.dp)) {
+    Canvas(Modifier.size(13.5.dp)) {
         val w = size.width
         val h = size.height
-        val stroke = Stroke(width = w * .09f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        val stroke = Stroke(width = w * .10f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         fun line(x1: Float, y1: Float, x2: Float, y2: Float) = drawLine(color, Offset(w * x1, h * y1), Offset(w * x2, h * y2), stroke.width, StrokeCap.Round)
         when (kind) {
             "pause" -> { line(.32f, .18f, .32f, .82f); line(.68f, .18f, .68f, .82f) }
             "play" -> drawPath(Path().apply { moveTo(w * .3f, h * .15f); lineTo(w * .82f, h * .5f); lineTo(w * .3f, h * .85f); close() }, color, style = stroke)
             "restart" -> { drawArc(color, -45f, 285f, false, Offset(w * .16f, h * .16f), Size(w * .68f, h * .68f), style = stroke); line(.74f, .08f, .74f, .32f); line(.74f, .32f, .5f, .32f) }
             "next" -> { line(.18f, .2f, .68f, .5f); line(.68f, .5f, .18f, .8f); line(.8f, .18f, .8f, .82f) }
-            "queue" -> { repeat(3) { i -> val y = .24f + i * .26f; drawCircle(color, w * .035f, Offset(w * .14f, h * y)); line(.32f, y, .88f, y) } }
+            "queue" -> { repeat(3) { i -> val y = .24f + i * .26f; drawCircle(color, w * .04f, Offset(w * .14f, h * y)); line(.32f, y, .88f, y) } }
             "favorite" -> drawPath(Path().apply { moveTo(w * .5f, h * .88f); cubicTo(w * -.2f, h * .36f, w * .12f, h * -.08f, w * .5f, h * .27f); cubicTo(w * .88f, h * -.08f, w * 1.2f, h * .36f, w * .5f, h * .88f); close() }, color, style = stroke)
             "original" -> { drawRoundRect(color, Offset(w * .36f, h * .08f), Size(w * .28f, h * .5f), androidx.compose.ui.geometry.CornerRadius(w * .14f), style = stroke); drawArc(color, 0f, 180f, false, Offset(w * .2f, h * .32f), Size(w * .6f, h * .4f), style = stroke); line(.5f, .72f, .5f, .91f); line(.34f, .92f, .66f, .92f) }
             "backing" -> { line(.39f, .16f, .39f, .77f); line(.39f, .16f, .82f, .08f); line(.82f, .08f, .82f, .68f); drawOval(color, Offset(w * .12f, h * .68f), Size(w * .27f, h * .2f), style = stroke); drawOval(color, Offset(w * .55f, h * .6f), Size(w * .27f, h * .2f), style = stroke) }
