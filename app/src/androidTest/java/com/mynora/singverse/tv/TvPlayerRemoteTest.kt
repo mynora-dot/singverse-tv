@@ -13,6 +13,7 @@ import android.os.SystemClock
 import android.test.InstrumentationTestCase
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.compose.ui.graphics.toArgb
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import com.google.zxing.BarcodeFormat
@@ -708,6 +709,39 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         assertVisibleFocus()
     }
 
+    fun testVideoSelectionsStayDarkWhenRemoteFocusMovesAway() {
+        start("test-song-2")
+        assertNativeRoleSwitch("backing", "stream:2", paused = false)
+        focusAction("lyrics")
+        var frame = screenshot("video-dark-playback-controls")
+        assertDarkControl(frame, "暂停")
+        assertDarkControl(frame, "伴奏", checked = true)
+        frame.recycle()
+
+        focusAction("pause")
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("暂停后显示继续按钮") { onMain { !app.playing && app.player.playbackState == Player.STATE_READY } }
+        onMain { app.playbackOptions.chooseText("内嵌字幕") }
+        focusAction("lyrics")
+        val origin = focused()
+        frame = screenshot("video-dark-resume-control")
+        assertDarkControl(frame, "继续")
+        frame.recycle()
+
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("播放设置焦点在完成按钮") { focused().startsWith("dialog:") && focused().endsWith(":action:完成") }
+        assertVisibleFocus()
+        frame = screenshot("video-dark-subtitle-choices")
+        assertDarkControl(frame, "歌词字幕", checked = true)
+        assertDarkControl(frame, "内嵌字幕", checked = true)
+        frame.recycle()
+
+        key(KeyEvent.KEYCODE_BACK)
+        waitFor("设置返回恢复歌词字幕按钮的焦点") {
+            onMain { activity.focusMemory.activeDialogs == 0 } && focused() == origin
+        }
+    }
+
     fun testVideoControlsAutoHideAndSettingsCategoriesRestoreFocus() {
         start("test-song-2")
         focusAction("pause")
@@ -736,10 +770,12 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         categories.forEachIndexed { index, (category, lastKey, lastCaption) ->
             val tabKey = ":action:playback:tab:$category"
             repeat(3) { if (!focused().endsWith(tabKey)) key(KeyEvent.KEYCODE_DPAD_LEFT) }
-            // Native edge navigation may leave the tab row for the preceding Complete button.
-            // Allow that extra focus step when searching right; stop at the actual target.
-            repeat(6) { if (!focused().endsWith(tabKey)) key(KeyEvent.KEYCODE_DPAD_RIGHT) }
+            repeat(3) { if (!focused().endsWith(tabKey)) key(KeyEvent.KEYCODE_DPAD_RIGHT) }
             waitFor("遥控聚焦$category 分类") { focused().endsWith(tabKey) }
+            if (index == 0 || index == categories.lastIndex) {
+                key(if (index == 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT)
+                assertTrue("左右键在页签边缘保持当前焦点", focused().endsWith(tabKey))
+            }
             key(KeyEvent.KEYCODE_DPAD_CENTER)
             assertVisibleFocus()
             if (category != "歌词字幕") assertFalse("$category 长列表末项不应从初始视口直接可见", nodes().any {
@@ -888,6 +924,25 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
             mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE), DecodeHintType.TRY_HARDER to true))
         assertEquals("播放器二维码必须能从最终像素解出同一个动态邀请", fixture.invitationUrl, decoded.text)
         image.recycle()
+    }
+
+    private fun assertDarkControl(image: Bitmap, caption: String, checked: Boolean = false) {
+        val control = nodes().firstOrNull { it.isVisibleToUser && it.isClickable && label(it) == caption }
+        assertNotNull("应显示可操作的 $caption", control)
+        val bounds = Rect().also { control!!.getBoundsInScreen(it) }
+        assertTrue("$caption 应位于画面内", bounds.intersect(0, 0, image.width, image.height))
+        val pixels = IntArray(bounds.width() * bounds.height())
+        image.getPixels(pixels, 0, bounds.width(), bounds.left, bounds.top, bounds.width(), bounds.height())
+        val lightPixels = pixels.count { Color.red(it) >= 225 && Color.green(it) >= 225 && Color.blue(it) >= 225 }
+        assertTrue("$caption 使用深色底，浅色像素 $lightPixels/${pixels.size}", lightPixels < pixels.size / 3)
+        if (checked) {
+            val accent = Accent.toArgb()
+            val accentPixels = pixels.count {
+                abs(Color.red(it) - Color.red(accent)) < 12 && abs(Color.green(it) - Color.green(accent)) < 12 &&
+                    abs(Color.blue(it) - Color.blue(accent)) < 12
+            }
+            assertTrue("$caption 显示当前选择的小勾", accentPixels > 4)
+        }
     }
 
     private fun assertVisibleFocus() {

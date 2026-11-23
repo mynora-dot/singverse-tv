@@ -28,6 +28,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Text
 
 /** Shared controls only; the parent owns the different video/audio presentation. */
@@ -74,7 +76,7 @@ import androidx.tv.material3.Text
         PlayerProgress(app)
         Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             PlayerControlButton(label, if (pause) "pause" else if (retrying) "restart" else "play", "player:pause",
-                Modifier.focusRequester(primaryFocus), enabled = hasSong || confirming, emphasized = true) {
+                Modifier.focusRequester(primaryFocus), enabled = hasSong || confirming) {
                 when {
                     confirming -> app.command("START")
                     retrying -> app.retryPlayback()
@@ -88,7 +90,7 @@ import androidx.tv.material3.Text
             val favorite = songId.isNotBlank() && app.isFavorite(songId)
             PlayerControlButton(if (favorite) "已收藏" else "收藏", "favorite", "player:favorite", selected = favorite, enabled = songId.isNotBlank() && !app.favoriteSaving) { app.toggleFavorite() }
             Spacer(Modifier.weight(1f))
-            Row(Modifier.background(Ink.copy(alpha = .48f), TvShape.control).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 PlayerControlButton("原唱", "original", "player:role:original", selected = app.activeAudioRole == "original", enabled = app.canUseAudioRole(true)) { app.useAudioRole(true) }
                 PlayerControlButton("伴奏", "backing", "player:role:backing", selected = app.activeAudioRole == "backing", enabled = app.canUseAudioRole(false)) { app.useAudioRole(false) }
             }
@@ -105,15 +107,16 @@ import androidx.tv.material3.Text
     val songId = app.snapshot.optJSONObject("playback")?.optString("songId").orEmpty()
     var preview by remember(songId) { mutableStateOf<Long?>(null) }
     var focused by remember { mutableStateOf(false) }
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
     val duration = app.duration.coerceAtLeast(0)
     val position = (preview ?: app.position).coerceIn(0, if (duration > 0) duration else Long.MAX_VALUE)
     val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     BackHandler(enabled = focused && preview != null) { preview = null }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(30.dp).tvFocusTarget("player:progress")
+        Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(32.dp).tvFocusTarget("player:progress")
             .onFocusChanged { focused = it.isFocused; if (!it.isFocused) preview = null }
-            .tvFocus(focused, RoundedCornerShape(8.dp))
-            .background(if (focused) Elevated.copy(alpha = .8f) else Color.Transparent, RoundedCornerShape(8.dp))
+            .tvFocus(focused && windowFocused, GlassShape.pill)
+            .glassSurface(GlassShape.pill)
             .onPreviewKeyEvent { event ->
                 when (event.key) {
                     Key.DirectionLeft, Key.DirectionRight -> {
@@ -158,36 +161,38 @@ import androidx.tv.material3.Text
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     enabled: Boolean = true,
-    emphasized: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = TvShape.control
-    val highlighted = selected || emphasized
-    val ink = if (highlighted && enabled) Ink else if (enabled) Paper else Muted.copy(alpha = .6f)
+    val shape = GlassShape.pill
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(40.dp).tvFocusTarget("action:$focusKey").onFocusChanged { focused = it.isFocused }
-            .tvFocus(focused, shape).semantics {
+        modifier = modifier.height(42.dp).tvFocusTarget("action:$focusKey").onFocusChanged { focused = it.isFocused }
+            .tvFocus(focused && windowFocused, shape).semantics {
                 this.selected = selected
                 if (!enabled) stateDescription = "不可用"
             },
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(shape),
         colors = ButtonDefaults.colors(
-            containerColor = if (highlighted) Primary else Panel.copy(alpha = .8f), contentColor = ink,
-            focusedContainerColor = if (highlighted) Primary else Elevated, focusedContentColor = ink,
-            disabledContainerColor = if (selected) Primary.copy(alpha = .65f) else Panel.copy(alpha = .35f), disabledContentColor = ink,
+            containerColor = if (selected) Glass.surfaceSelected else Glass.cardSurface,
+            contentColor = Paper,
+            focusedContainerColor = Glass.surfaceFocus,
+            focusedContentColor = Paper,
+            disabledContainerColor = Glass.surface.copy(alpha = Glass.surface.alpha * .4f),
+            disabledContentColor = Muted.copy(alpha = .5f),
         ),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            PlayerControlGlyph(icon, ink)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (selected) HomeGlyph("check", Modifier.size(14.dp), if (enabled) Accent else LocalContentColor.current)
+            else PlayerControlGlyph(icon, LocalContentColor.current)
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(label, color = ink, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
+                Text(label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (!enabled) Text("不可用", color = ink, fontSize = 8.sp, lineHeight = 10.sp)
+                if (!enabled) Text("不可用", fontSize = 8.sp, lineHeight = 10.sp)
             }
         }
     }

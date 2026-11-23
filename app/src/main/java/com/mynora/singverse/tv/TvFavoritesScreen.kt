@@ -30,7 +30,7 @@ import org.json.JSONObject
             if (app.favoritesReady) "在手机、后台添加，或播放时按「收藏」。" else "请检查 NAS 连接后刷新。",
         ) else LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(6.dp)) {
             items(favorites, key = { it.optString("id") }) { favorite ->
-                Row(Modifier.fillMaxWidth().background(Panel, TvShape.card).padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth().glassSurface(TvShape.card).padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SongArtwork(app, favorite, Modifier.size(50.dp))
                     Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                         Text(favorite.optString("title"), color = Paper, fontSize = 16.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

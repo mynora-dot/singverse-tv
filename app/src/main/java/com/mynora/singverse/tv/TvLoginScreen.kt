@@ -37,7 +37,7 @@ import java.util.Date
 import java.util.Locale
 
 private val LoginInk = Ink
-private val LoginPanel = Panel
+private val LoginPanel = Glass.surface
 private val Ivory = Paper
 private val LoginMuted = Muted
 
@@ -59,6 +59,7 @@ private val LoginMuted = Muted
         val scale = minOf(maxWidth.value / 960f, maxHeight.value / 540f)
         CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
             Box(Modifier.fillMaxSize().background(LoginInk)) {
+                AmbientStage(accent = true)
                 Row(Modifier.fillMaxWidth().padding(horizontal = 62.dp, vertical = 36.dp), verticalAlignment = Alignment.CenterVertically) {
                     LoginIcon("brand", Modifier.size(26.dp), Primary); Spacer(Modifier.width(8.dp))
                     Text("SingVerse", color = Ivory, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
@@ -95,11 +96,11 @@ private val LoginMuted = Muted
 
 @Composable private fun LoginButton(modifier: Modifier = Modifier, primary: Boolean = false, quiet: Boolean = false, enabled: Boolean = true, padding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 8.dp), onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    Button(onClick = onClick, enabled = enabled, modifier = modifier.onFocusChanged { focused = it.isFocused }.tvFocus(focused, TvShape.control), contentPadding = padding,
-        shape = ButtonDefaults.shape(TvShape.control), scale = ButtonDefaults.scale(focusedScale = 1f),
-        colors = ButtonDefaults.colors(containerColor = if (quiet) Color.Transparent else if (primary) Primary else LoginPanel, contentColor = if (primary) LoginInk else Ivory,
-            focusedContainerColor = if (quiet) Color.Transparent else if (primary) Primary else Elevated, focusedContentColor = if (primary) LoginInk else Ivory,
-            disabledContainerColor = LoginPanel.copy(alpha = .5f), disabledContentColor = LoginMuted)) {
+    Button(onClick = onClick, enabled = enabled, modifier = modifier.onFocusChanged { focused = it.isFocused }.tvFocus(focused, GlassShape.control), contentPadding = padding,
+        shape = ButtonDefaults.shape(GlassShape.control), scale = ButtonDefaults.scale(focusedScale = 1f),
+        colors = ButtonDefaults.colors(containerColor = if (quiet) Color.Transparent else if (primary) Primary else Glass.surface, contentColor = if (primary) LoginInk else Ivory,
+            focusedContainerColor = if (quiet) Glass.surface else if (primary) Glass.surfaceFocus else Glass.surfaceHover, focusedContentColor = Ivory,
+            disabledContainerColor = Glass.surface.copy(alpha = Glass.surface.alpha * .4f), disabledContentColor = LoginMuted)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically, content = content)
     }
 }
@@ -122,7 +123,7 @@ private val LoginMuted = Muted
         }
         Column(Modifier.width(269.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("手机扫码登录", color = Ivory, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Box(Modifier.padding(top = 16.dp).size(212.dp).background(if (showQr) Color.White else LoginPanel), contentAlignment = Alignment.Center) {
+            Box(Modifier.padding(top = 16.dp).size(212.dp).glassSurface(TvShape.card, base = if (showQr) Color.White else null), contentAlignment = Alignment.Center) {
                 if (showQr) Qr(state.qrUrl, Modifier.fillMaxSize(), "用 SingVerse 手机 App 扫描此码登录电视")
                 else Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     LoginIcon(if (state.pairingStage in listOf(PairingStage.SCANNED, PairingStage.CONNECTING)) "user" else "qr", Modifier.size(29.dp), LoginMuted)
@@ -214,7 +215,7 @@ private val LoginMuted = Muted
         if (!state.mfaRequired) {
             Row(Modifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("NAS 连接", color = LoginMuted, fontSize = 13.sp); Spacer(Modifier.weight(1f))
-                Row(Modifier.background(LoginPanel, RoundedCornerShape(8.dp)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     listOf("http", "https").forEach { scheme ->
                         LoginButton(Modifier.width(70.dp).height(30.dp), primary = state.protocol == scheme, enabled = !state.busy, padding = PaddingValues(0.dp), onClick = { state.protocol = scheme }) {
                             Text(scheme.uppercase(Locale.ROOT), fontSize = 12.sp)
@@ -273,7 +274,7 @@ private val LoginMuted = Muted
     if (editing) Dialog(onDismissRequest = { closeEditor(false) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         CompositionLocalProvider(LocalDensity provides dialogDensity) {
             val keyboard = LocalSoftwareKeyboardController.current
-            Column(Modifier.width(450.dp).background(LoginPanel, RoundedCornerShape(18.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.width(450.dp).glassSurface(GlassShape.dialog, highlighted = true, base = Glass.surfaceDialog).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(label, color = Ivory, fontSize = 23.sp)
                 BasicTextField(draft, { draft = it.take(256) }, Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent {
                     if (it.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN && it.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
@@ -305,7 +306,7 @@ private val LoginMuted = Muted
             Text(if (discovery.searching) "正在搜索" else if (services.isEmpty()) "搜索结束" else "${services.size} 台 NAS", color = LoginMuted, fontSize = 12.sp)
         }
         Box(Modifier.padding(top = 20.dp).fillMaxWidth().height(224.dp), contentAlignment = Alignment.Center) {
-            if (services.isEmpty()) Column(Modifier.fillMaxSize().background(Color(0xFF111112), RoundedCornerShape(14.dp)).padding(24.dp),
+            if (services.isEmpty()) Column(Modifier.fillMaxSize().glassSurface(TvShape.card).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 LoginIcon("nas", Modifier.size(38.dp), LoginMuted)
                 Text(if (discovery.searching) "正在搜索局域网…" else "暂未发现 NAS", color = Ivory, fontSize = 20.sp, modifier = Modifier.padding(top = 20.dp))

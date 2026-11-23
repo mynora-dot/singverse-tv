@@ -158,7 +158,8 @@ import java.util.Locale
 }
 
 @Composable private fun AudioPlayerScene(app: TvApp, song: JSONObject?) {
-    Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(Color(0xFF1C1C1E), Ink), radius = 950f))) {
+    Box(Modifier.fillMaxSize()) {
+        AmbientStage(accent = true)
         Row(Modifier.fillMaxWidth().padding(start = 42.dp, end = 232.dp, top = 82.dp), horizontalArrangement = Arrangement.spacedBy(36.dp), verticalAlignment = Alignment.Top) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SongArtwork(app, song, Modifier.size(216.dp).clip(TvShape.panel), contentScale = ContentScale.Fit)
@@ -238,7 +239,7 @@ import java.util.Locale
 @Composable private fun NextSongCard(app: TvApp, item: JSONObject, modifier: Modifier = Modifier) {
     val song = item.optJSONObject("song")
     val ending = app.duration > 0 && app.duration - app.position in 0..30000
-    Row(modifier.background(Color(0xDE18181A), TvShape.card).border(1.dp, if (ending) Primary.copy(alpha = .75f) else Hairline, TvShape.card).padding(11.dp),
+    Row(modifier.glassSurface(TvShape.card, highlighted = ending, base = Color(0xCC0E0E12)).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         SongArtwork(app, song, Modifier.size(46.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -250,7 +251,7 @@ import java.util.Locale
 }
 
 @Composable private fun PlayerPhoneCard(app: TvApp, modifier: Modifier = Modifier) {
-    Column(modifier.background(Color(0xE618181A), TvShape.card).border(1.dp, Hairline.copy(alpha = .65f), TvShape.card).padding(12.dp),
+    Column(modifier.glassSurface(TvShape.card, base = Color(0xCC0E0E12)).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             HomeGlyph("phone", Modifier.size(12.dp), Primary)

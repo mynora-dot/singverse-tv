@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -15,11 +16,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.C
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Text
 
 private val PlaybackSettingTabs = listOf(
@@ -36,14 +45,18 @@ private val PlaybackSettingTabs = listOf(
     audioOnly: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val inDialog = LocalTvFocusMemory.current.activeDialogs > 0
     var tab by remember(initialTab) {
         mutableStateOf(PlaybackSettingTabs.firstOrNull { initialTab == it.first || initialTab == it.second }?.first ?: "音轨")
     }
     Column(modifier.fillMaxWidth().heightIn(max = 332.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LazyRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) {
-            items(PlaybackSettingTabs, key = { it.first }) { (value, label) ->
-                Action(label, selected = tab == value, focusKey = "playback:tab:$value") { tab = value }
+            itemsIndexed(PlaybackSettingTabs, key = { _, tab -> tab.first }) { index, (value, label) ->
+                PlaybackChoice(label, Modifier.focusProperties {
+                    if (inDialog && index == 0) left = FocusRequester.Cancel
+                    if (inDialog && index == PlaybackSettingTabs.lastIndex) right = FocusRequester.Cancel
+                }, selected = tab == value, focusKey = "playback:tab:$value") { tab = value }
             }
         }
         key(tab, audioOnly) {
@@ -73,13 +86,13 @@ private fun LazyListScope.audioTrackSettings(app: TvApp) {
     section("audio", "可用音轨", "选择音轨后试听；仅显示本机可播放的音轨。")
     if (audio.isEmpty()) item("audio:empty") { SettingNote("开始播放后显示可用音轨。") }
     items(audio, key = { "audio:${it.group}:${it.index}" }) { track ->
-        Action(track.label, Modifier.fillMaxWidth(), selected = track.selected,
+        PlaybackChoice(track.label, Modifier.fillMaxWidth(), selected = track.selected,
             focusKey = "playback:audio:${track.group}:${track.index}") { options.selectTrack(track) }
     }
     if (audio.any { it.selected && it.channels == 2 }) {
         section("channel", "声道", "分别试听左、右声道，或保留立体声。")
         items(listOf("STEREO" to "立体声", "LEFT" to "左声道", "RIGHT" to "右声道", "MONO" to "混合单声道"), key = { "channel:${it.first}" }) { (mode, label) ->
-            Action(label, Modifier.fillMaxWidth(), selected = options.channel == mode,
+            PlaybackChoice(label, Modifier.fillMaxWidth(), selected = options.channel == mode,
                 focusKey = "playback:channel:$mode") { options.selectChannel(mode) }
         }
     }
@@ -101,14 +114,14 @@ private fun LazyListScope.textTrackSettings(app: TvApp) {
     val options = app.playbackOptions
     section("text", "歌词与字幕来源", options.textStatus.ifBlank { "开始播放后读取歌词与字幕。" })
     items(listOf("关闭", "内嵌字幕") + (options.sidecars.map { it.first } + options.plainLyrics.map { it.first }).distinct(), key = { "text:source:$it" }) { name ->
-        Action(name, Modifier.fillMaxWidth(), selected = options.textSelection == name,
+        PlaybackChoice(name, Modifier.fillMaxWidth(), selected = options.textSelection == name,
             focusKey = "playback:text:source:$name") { options.chooseText(name) }
     }
     val embedded = options.tracks.filter { it.type == C.TRACK_TYPE_TEXT }
     if (embedded.isNotEmpty()) {
         section("embedded", "内嵌字幕轨道")
         items(embedded, key = { "text:track:${it.group}:${it.index}" }) { track ->
-            Action(track.label, Modifier.fillMaxWidth(), selected = track.selected && options.textSelection == "内嵌字幕",
+            PlaybackChoice(track.label, Modifier.fillMaxWidth(), selected = track.selected && options.textSelection == "内嵌字幕",
                 focusKey = "playback:text:track:${track.group}:${track.index}") { options.selectTrack(track) }
         }
     }
@@ -122,7 +135,7 @@ private fun LazyListScope.outputSettings(app: TvApp) {
     section("output", "声音输出", if (options.canSelectOutput) "优先输出：${options.route}。实际输出由电视系统协商。"
         else "使用电视系统默认输出；切换 HDMI、蓝牙或其他设备请在电视系统设置中操作。")
     item("output:default") {
-        Action("系统默认输出", Modifier.fillMaxWidth(), selected = options.route == "系统默认",
+        PlaybackChoice("系统默认输出", Modifier.fillMaxWidth(), selected = options.route == "系统默认",
             focusKey = "playback:output:default") { options.chooseRoute(null) }
     }
     items(options.routes, key = { "output:route:${it.id}" }) { route ->
@@ -141,7 +154,7 @@ private fun LazyListScope.outputSettings(app: TvApp) {
             onDecrease = { options.setPitch(options.semitones - 1) }, onIncrease = { options.setPitch(options.semitones + 1) })
     }
     item("pitch:reset") {
-        Action("恢复原调", Modifier.fillMaxWidth(), selected = options.semitones == 0,
+        Action("恢复原调", Modifier.fillMaxWidth(),
             focusKey = "playback:pitch:reset") { options.setPitch(0) }
     }
 }
@@ -151,16 +164,16 @@ private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean
     if (!audioOnly) {
         section("compatibility", "播放兼容性", "老电视兼容模式最高 720p，优先使用 H.264 和双声道音频；需要时由 NAS 转换。")
         item("compatibility:auto") {
-            Action("自动检测", Modifier.fillMaxWidth(), selected = !app.compatiblePlayback,
+            PlaybackChoice("自动检测", Modifier.fillMaxWidth(), selected = !app.compatiblePlayback,
                 focusKey = "playback:compatibility:auto") { app.changeCompatibility(false) }
         }
         item("compatibility:legacy") {
-            Action("老电视兼容", Modifier.fillMaxWidth(), selected = app.compatiblePlayback,
+            PlaybackChoice("老电视兼容", Modifier.fillMaxWidth(), selected = app.compatiblePlayback,
                 focusKey = "playback:compatibility:legacy") { app.changeCompatibility(true) }
         }
         section("quality", "视频画质", if (app.compatiblePlayback) "兼容模式最高 720p；切换后沿用当前歌曲与播放进度。" else "切换后沿用当前歌曲与播放进度。")
         items(if (app.compatiblePlayback) listOf("auto", "720p", "480p") else listOf("auto", "1080p", "720p", "480p"), key = { "quality:$it" }) { quality ->
-            Action(if (quality == "auto") "自动画质" else quality, Modifier.fillMaxWidth(), selected = app.playbackQuality == quality,
+            PlaybackChoice(if (quality == "auto") "自动画质" else quality, Modifier.fillMaxWidth(), selected = app.playbackQuality == quality,
                 focusKey = "playback:quality:$quality") { app.changeQuality(quality) }
         }
     }
@@ -178,6 +191,41 @@ private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean
     }
     item("sync:reset") {
         Action("恢复同步默认值", Modifier.fillMaxWidth(), focusKey = "playback:sync:reset") { options.offset(0); options.delayAudio(0) }
+    }
+}
+
+@Composable private fun PlaybackChoice(
+    label: String,
+    modifier: Modifier = Modifier,
+    selected: Boolean,
+    focusKey: String,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    val shape = TvShape.control
+    Button(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 36.dp).tvFocusTarget("action:$focusKey")
+            .onFocusChanged { focused = it.isFocused }
+            .tvFocus(focused && windowFocused, shape)
+            .semantics { this.selected = selected },
+        shape = ButtonDefaults.shape(shape),
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        colors = ButtonDefaults.colors(
+            containerColor = if (selected) Glass.surfaceSelected else Glass.cardSurface,
+            contentColor = Paper,
+            focusedContainerColor = Glass.surfaceFocus,
+            focusedContentColor = Paper,
+        ),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Box(Modifier.size(14.dp)) {
+            if (selected) HomeGlyph("check", Modifier.fillMaxSize(), Accent)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(label, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

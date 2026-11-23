@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -89,7 +90,9 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             }
             Column(
                 Modifier.width(if (wide) 760.dp else 500.dp).heightIn(max = 462.dp)
-                    .focusRequester(entry).focusGroup().background(Color(0xF51C1C1E), TvShape.dialog).padding(30.dp),
+                    .focusRequester(entry).focusGroup()
+                    .glassSurface(GlassShape.dialog, highlighted = true, base = Glass.surfaceDialog)
+                    .padding(30.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -104,6 +107,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
 
 @Composable internal fun TvScreen(app: TvApp, focusMemory: TvFocusMemory = remember(app.client.base) { TvFocusMemory() }) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
+        AmbientStage()
         val density = LocalDensity.current
         val scale = minOf(maxWidth.value / 960f, maxHeight.value / 540f)
         CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
@@ -257,7 +261,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             else -> app.pendingConfirm = "退出演唱"
         }
     }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF101010), Ink))).onPreviewKeyEvent {
+    Box(Modifier.fillMaxSize().onPreviewKeyEvent {
         // Automatic selection belongs to D-pad focus movement, not platform/editor focus fallback.
         memory.directionalInput = it.type == KeyEventType.KeyDown && it.key in listOf(Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown)
         false
@@ -269,12 +273,16 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                 if (app.page == "首页") PaddingValues(start = 36.dp, end = 36.dp, top = 33.dp, bottom = 32.dp)
                 else PaddingValues(horizontal = 24.dp, vertical = 12.dp)),
                 verticalArrangement = Arrangement.spacedBy(if (app.page == "首页") 6.dp else 10.dp)) {
-                Row(Modifier.fillMaxWidth().height(34.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HomeGlyph("brand", Modifier.size(if (app.page == "首页") 29.dp else 21.dp), Primary)
-                        Text("SingVerse", color = Paper, fontSize = if (app.page == "首页") 18.sp else 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+                        HomeGlyph("brand", Modifier.size(if (app.page == "首页") 28.dp else 22.dp), Primary)
+                        Text("SingVerse", color = Paper, fontSize = if (app.page == "首页") 19.sp else 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Row(Modifier.padding(start = if (app.page == "首页") 40.dp else 0.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(
+                        Modifier.padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         listOf("首页", "点歌", "收藏", "已点", "设置").forEach { page ->
                             TvNavigation(if (page == "已点") "已点 ${queuedSongCount(app)}" else page,
                                 (if (page == selectedNavigation) Modifier.focusRequester(homeFocus) else Modifier).tvFocusTarget("nav:$page")
@@ -310,14 +318,17 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                         "设置" -> Settings(app)
                     }
                 }
-                if (app.page != "已点") SingingBar(app, compact = app.page == "首页")
+                if (app.page != "已点") {
+                    val compact = app.page == "首页" || (app.page == "点歌" && app.selected == null)
+                    SingingBar(app, compact = compact)
+                }
             }
         }
     }
     if (app.queueAddMessage.isNotBlank() && app.selected == null && app.page != "演唱") {
-        Box(Modifier.fillMaxSize().padding(bottom = 80.dp), contentAlignment = Alignment.BottomCenter) {
-            Text(app.queueAddMessage, Modifier.widthIn(max = 700.dp).background(Elevated, TvShape.control)
-                .padding(horizontal = 20.dp, vertical = 10.dp), color = Paper, fontSize = 14.sp, lineHeight = 20.sp,
+        Box(Modifier.fillMaxSize().padding(bottom = 84.dp), contentAlignment = Alignment.BottomCenter) {
+            Text(app.queueAddMessage, Modifier.widthIn(max = 700.dp).glassSurface(GlassShape.pill, base = Glass.surfaceSheet)
+                .padding(horizontal = 22.dp, vertical = 11.dp), color = Paper, fontSize = 14.sp, lineHeight = 20.sp,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -391,24 +402,28 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
 internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.objects().orEmpty().count { it.optString("status") in listOf("WAITING", "HANDOFF", "PLAYING") }
 
 @Composable private fun SongCenter(app: TvApp) {
+    val covers = app.homeSongs.ifEmpty { app.songs }.asSequence()
+        .filter { it.optString("id").isNotBlank() }.take(8).toList()
+    val memory = LocalTvFocusMemory.current
+    val page = LocalTvFocusPage.current
+    val firstSongId = covers.firstOrNull()?.getString("id")
+    val lastSongId = covers.lastOrNull()?.getString("id")
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("点歌中心", color = Paper, fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.Medium)
-            Text("按歌名搜索，或从歌手、分类和歌单里挑一首", color = Muted, fontSize = 14.sp, lineHeight = 20.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        SongEntryRow(app)
+        Text("点歌中心", color = Paper, fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium)
+        SongEntryRow(app, searchModifier = Modifier.focusProperties {
+            firstSongId?.let { memory.targets["$page:song:$it"] }?.let { down = it }
+        })
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("曲库", color = Paper, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
-                Text(librarySummary(app), color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("曲库", color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium)
+                Text(librarySummary(app), color = Muted, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.weight(1f))
                 if (app.snapshot.optString("status") == "ENDED") Action("开始新聚会", selected = true, textSize = 13.sp) { app.newSession() }
-                Action("刷新曲库", quiet = true, textSize = 13.sp) { app.run { app.loadHome(); app.loadSongs(); app.loadTags() } }
+                Action("刷新曲库", modifier = Modifier.focusProperties {
+                    lastSongId?.let { memory.targets["$page:song:$it"] }?.let { down = it }
+                }, quiet = true, textSize = 13.sp) { app.run { app.loadHome(); app.loadSongs(); app.loadTags() } }
             }
-            LibraryShelf(app, Modifier.weight(1f))
-            Text("歌单由 NAS 管理端维护，选中后按保存顺序逐首点唱", color = Muted.copy(alpha = .72f), fontSize = 11.sp,
-                lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            LibraryShelf(app, covers, Modifier.weight(1f))
         }
     }
 }
@@ -419,17 +434,18 @@ private fun librarySummary(app: TvApp): String {
     return listOf(songs, playlists).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { "等待同步" }
 }
 
-@Composable private fun SongEntryRow(app: TvApp) {
+@Composable private fun SongEntryRow(app: TvApp, searchModifier: Modifier) {
     val entries = listOf(
         Triple("search", "搜索歌曲", "歌名 · 歌手 · 拼音 · 编号"),
         Triple("mic", "歌手点歌", "按歌手找歌"),
         Triple("grid", "分类点歌", "语种 · 风格 · 年代"),
         Triple("playlist", "我的歌单", if (app.homePlaylists.isNotEmpty()) "${app.homePlaylists.size} 个共享歌单" else "共享歌单"),
     )
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         entries.forEachIndexed { index, entry ->
+            val modifier = Modifier.weight(if (index == 0) 1.25f else 1f).heightIn(min = 72.dp)
             SongEntryCard(entry.first, entry.second, entry.third,
-                Modifier.weight(if (index == 0) 1.35f else 1f).height(128.dp), "quick:$index") {
+                if (index == 0) modifier.then(searchModifier) else modifier, "quick:$index") {
                 app.navigate(listOf("找歌", "歌手", "分类", "歌单")[index])
             }
         }
@@ -438,31 +454,28 @@ private fun librarySummary(app: TvApp): String {
 
 @Composable private fun SongEntryCard(icon: String, title: String, subtitle: String, modifier: Modifier, focusKey: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val shape = TvShape.card
+    val shape = TvShape.control
     Button(onClick, modifier = modifier.tvFocusTarget(focusKey).onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape),
-        contentPadding = PaddingValues(0.dp), scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(shape),
-        colors = ButtonDefaults.colors(containerColor = Panel, contentColor = Paper,
-            focusedContainerColor = Elevated, focusedContentColor = Paper)) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                HomeGlyph(icon, Modifier.size(28.dp), Paper.copy(alpha = if (focused) .95f else .78f))
-                Spacer(Modifier.weight(1f))
-                HomeGlyph("chevron", Modifier.size(16.dp), Muted.copy(alpha = if (focused) 1f else .6f))
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(shape),
+        colors = ButtonDefaults.colors(containerColor = Glass.cardSurface, contentColor = Paper,
+            focusedContainerColor = Glass.surfaceFocus, focusedContentColor = Paper)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HomeGlyph(icon, Modifier.size(23.dp), if (icon == "search") Accent else Paper)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, color = Paper, fontSize = 18.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = Muted, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.weight(1f))
-            Text(title, color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            HomeGlyph("chevron", Modifier.size(12.dp), if (focused) Paper else Muted)
         }
     }
 }
 
-@Composable private fun LibraryShelf(app: TvApp, modifier: Modifier = Modifier) {
-    val covers = (if (app.homeSongs.isNotEmpty()) app.homeSongs else app.songs).take(8)
+@Composable private fun LibraryShelf(app: TvApp, covers: List<JSONObject>, modifier: Modifier) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         if (covers.isEmpty()) {
-            Row(Modifier.fillMaxSize().background(Panel.copy(alpha = .5f), TvShape.card).padding(horizontal = 20.dp),
+            Row(Modifier.fillMaxWidth().padding(vertical = 28.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 MusicMark(Modifier.size(26.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -473,10 +486,38 @@ private fun librarySummary(app: TvApp): String {
             }
         } else {
             val gap = 12.dp
-            val size = ((maxWidth - gap * 7) / 8f).coerceAtMost(maxHeight).coerceAtLeast(1.dp)
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.Top) {
-                covers.forEach { song -> SongArtwork(app, song, Modifier.size(size)) }
+            val width = ((maxWidth - gap * 7) / 8f).coerceAtLeast(1.dp)
+            Row(Modifier.fillMaxWidth().focusGroup(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                covers.forEach { song ->
+                    key(song.getString("id")) {
+                        LibrarySongTile(app, song, Modifier.width(width))
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable private fun LibrarySongTile(app: TvApp, song: JSONObject, modifier: Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = TvShape.control
+    Button(
+        onClick = { app.openSong(song) },
+        modifier = modifier.tvFocusTarget("song:${song.getString("id")}")
+            .onFocusChanged { focused = it.isFocused },
+        contentPadding = PaddingValues(0.dp),
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        shape = ButtonDefaults.shape(shape),
+        colors = ButtonDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Color.Transparent),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            SongArtwork(app, song, Modifier.weight(1f, fill = false).aspectRatio(1f)
+                .tvFocus(focused, shape).clearAndSetSemantics { }, shape = shape)
+            Spacer(Modifier.height(8.dp))
+            Text(song.optString("title").ifBlank { "未命名歌曲" }, color = Paper, fontSize = 14.sp, lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            Text(song.artists(), color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -486,22 +527,26 @@ private fun librarySummary(app: TvApp): String {
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" }
     val next = queue.firstOrNull { it.optString("status") == "HANDOFF" } ?: queue.firstOrNull { it.optString("status") == "WAITING" }
     val song = (current ?: next)?.optJSONObject("song")
-    val buttonSize = if (compact) Modifier.height(26.dp) else Modifier
-    Row(Modifier.fillMaxWidth().height(if (compact) 30.dp else 56.dp).background(if (compact) Color.Transparent else Panel.copy(alpha = .9f), TvShape.card)
-        .then(if (compact) Modifier.drawBehind { drawLine(Hairline.copy(alpha = .6f), androidx.compose.ui.geometry.Offset.Zero, androidx.compose.ui.geometry.Offset(size.width, 0f), 1.dp.toPx()) } else Modifier)
-        .then(if (compact) Modifier else Modifier.border(1.dp, Hairline.copy(alpha = .45f), TvShape.card))
-        .padding(horizontal = if (compact) 0.dp else 14.dp, vertical = if (compact) 2.dp else 7.dp),
+    val buttonSize = if (compact) Modifier.height(28.dp) else Modifier
+    Row(
+        Modifier.fillMaxWidth()
+            .height(if (compact) 36.dp else 62.dp)
+            .then(
+                if (compact) Modifier
+                else Modifier.glassSurface(TvShape.card)
+            )
+            .padding(horizontal = if (compact) 0.dp else 14.dp, vertical = if (compact) 2.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (!compact) SongArtwork(app, song, Modifier.size(40.dp))
+        if (!compact) SongArtwork(app, song, Modifier.size(44.dp), shape = GlassShape.control)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(if (song == null && compact) "方向键选择   确认点歌   返回上页" else if (song == null) "今晚，唱你喜欢的歌" else song.optString("title") + if (compact) " · ${if (current != null) stateLabel(app.playerState) else "等待确认开唱"}" else "", color = if (compact && song == null) Muted else Paper, fontSize = if (compact) 12.sp else 14.sp, lineHeight = 19.sp,
+            Text(if (song == null && compact) "方向键选择   确认点歌   返回上页" else if (song == null) "今晚，唱你喜欢的歌" else song.optString("title") + if (compact) " · ${if (current != null) stateLabel(app.playerState) else "等待确认开唱"}" else "", color = if (compact && song == null) Muted else Paper, fontSize = if (compact) 12.sp else 15.sp, lineHeight = 20.sp,
                 fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!compact) Text(when {
                 app.snapshot.optString("status") == "ENDED" -> "聚会已结束"
                 current != null -> "${song?.artists()} · ${stateLabel(app.playerState)}"
                 next != null -> "${song?.artists()} · 等待确认开唱"
                 else -> "从曲库选一首，开启家庭音乐现场"
-            }, color = if (current != null) Success.copy(alpha = .9f) else Muted, fontSize = 11.sp, lineHeight = 15.sp,
+            }, color = if (current != null) Success.copy(alpha = .95f) else Muted, fontSize = 11.sp, lineHeight = 15.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (!app.online) HomeButton("网络异常 · 重连", buttonSize, focusKey = "bar:reconnect") { app.reconnect() }
@@ -644,7 +689,7 @@ private fun librarySummary(app: TvApp): String {
 @Composable private fun PlaylistDetail(app: TvApp, list: LazyListState) {
     val playlist = app.playlistDetail ?: return
     Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 100.dp).background(Panel, TvShape.panel).padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 100.dp).glassSurface(TvShape.panel).padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             SongArtwork(app, JSONObject(playlist.toString()).put("revision", playlist.optString("coverVersion")), Modifier.size(56.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(playlist.optString("name"), color = Paper, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -662,7 +707,7 @@ private fun librarySummary(app: TvApp): String {
 @Composable private fun ArtistDetail(app: TvApp, list: LazyListState) {
     val artist = app.artistDetail ?: return
     Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 100.dp).clip(TvShape.panel).background(Panel)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 100.dp).clip(TvShape.panel).glassSurface(TvShape.panel)) {
             ArtistArtwork(app, artist, "background", Modifier.matchParentSize())
             Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Ink.copy(alpha = .96f), Ink.copy(alpha = .5f)))))
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -718,7 +763,7 @@ private fun librarySummary(app: TvApp): String {
 }
 
 @Composable private fun DetailTag(label: String) {
-    Text(label, modifier = Modifier.background(Panel, RoundedCornerShape(7.dp)).padding(horizontal = 11.dp, vertical = 6.dp), color = Paper, fontSize = 13.sp, lineHeight = 18.sp)
+    Text(label, modifier = Modifier.glassSurface(GlassShape.pill).padding(horizontal = 12.dp, vertical = 6.dp), color = Paper, fontSize = 13.sp, lineHeight = 18.sp)
 }
 
 @Composable internal fun Queue(app: TvApp, compact: Boolean = false) {
@@ -737,7 +782,7 @@ private fun librarySummary(app: TvApp): String {
             val song = item.optJSONObject("song")
             val playback = app.snapshot.optJSONObject("playback")
             val confirmed = playback?.optString("itemId") == item.optString("id") && playback?.optBoolean("confirmed") == true
-            Row(Modifier.fillMaxWidth().background(Panel, TvShape.card).border(1.dp, Primary.copy(alpha = .25f), TvShape.card).padding(13.dp),
+            Row(Modifier.fillMaxWidth().glassSurface(TvShape.card, highlighted = true).padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 SongArtwork(app, song, Modifier.size(58.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -772,19 +817,21 @@ private fun librarySummary(app: TvApp): String {
 }
 
 @Composable private fun QueueRow(app: TvApp, item: JSONObject, index: Int, count: Int) {
-    var focused by remember { mutableStateOf(false) }
+    var rowFocused by remember { mutableStateOf(false) }
+    var songFocused by remember { mutableStateOf(false) }
     val firstAction = remember { FocusRequester() }
-    val shape = TvShape.card
     val id = item.getString("id")
     val song = item.optJSONObject("song")
-    Row(Modifier.fillMaxWidth().onFocusChanged { focused = it.hasFocus }.focusGroup().tvFocus(focused, shape)
-        .background(if (focused) Elevated else Panel, shape).padding(6.dp),
+    Row(Modifier.fillMaxWidth().onFocusChanged { rowFocused = it.hasFocus }.focusGroup()
+        .glassSurface(TvShape.card).padding(6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Button(onClick = { firstAction.requestFocus() }, modifier = Modifier.weight(1f).heightIn(min = 62.dp).tvFocusTarget("action:queue:$id"),
-            scale = ButtonDefaults.scale(focusedScale = 1f), colors = ButtonDefaults.colors(containerColor = Color.Transparent,
+        Button(onClick = { firstAction.requestFocus() }, modifier = Modifier.weight(1f).heightIn(min = 62.dp).tvFocusTarget("action:queue:$id")
+            .onFocusChanged { songFocused = it.isFocused }.tvFocus(songFocused),
+            scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(TvShape.control),
+            colors = ButtonDefaults.colors(containerColor = Color.Transparent,
                 focusedContainerColor = Color.Transparent, contentColor = Paper, focusedContentColor = Paper)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text((index + 1).toString().padStart(2, '0'), Modifier.width(32.dp), color = if (focused) Primary else Muted, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text((index + 1).toString().padStart(2, '0'), Modifier.width(32.dp), color = if (rowFocused) Primary else Muted, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 SongArtwork(app, song, Modifier.size(46.dp))
                 Column(Modifier.weight(1f)) {
                     Text(song?.optString("title").orEmpty(), fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -792,7 +839,7 @@ private fun librarySummary(app: TvApp): String {
                 }
             }
         }
-        if (focused) {
+        if (rowFocused) {
             val actions = buildList {
                 if (app.snapshot.optString("queuePolicy") == "FAIR") {
                     add(if (item.optBoolean("priority")) "取消插队" to "UNTOP" else "优先下一首" to "TOP")
@@ -826,8 +873,7 @@ private fun librarySummary(app: TvApp): String {
                 Action(label, Modifier.fillMaxWidth(), selected = label == group) { group = label }
             }
         }
-        Column(Modifier.weight(1f).fillMaxHeight().background(Panel.copy(alpha = .8f), TvShape.panel)
-            .border(1.dp, Hairline.copy(alpha = .4f), TvShape.panel).padding(22.dp).verticalScroll(rememberScrollState()),
+        Column(Modifier.weight(1f).fillMaxHeight().glassSurface(TvShape.panel).padding(22.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when (group) {
                 "连接" -> {
@@ -884,7 +930,7 @@ private fun librarySummary(app: TvApp): String {
                     Heading("本场参与者", "主持权限只在电视上授予；撤销后可重新扫码加入。")
                     if (app.participants.isEmpty()) EmptyState("还没有亲友加入", "通过「手机点歌」邀请亲友。")
                     app.participants.forEach { participant ->
-                        Row(Modifier.fillMaxWidth().background(Elevated.copy(alpha = .55f), TvShape.card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().glassSurface(TvShape.card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(participant.optString("name"), color = Paper, fontSize = 17.sp, lineHeight = 23.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(if (participant.optBoolean("revoked")) "已撤销" else "已加入本场", color = if (participant.optBoolean("revoked")) Muted else Success, fontSize = 12.sp)
@@ -901,7 +947,7 @@ private fun librarySummary(app: TvApp): String {
 }
 
 @Composable private fun SettingActionRow(title: String, description: String, action: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().background(Elevated.copy(alpha = .42f), TvShape.card).padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().glassSurface(TvShape.card).padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, color = Paper, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
             Text(description, color = Muted, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)

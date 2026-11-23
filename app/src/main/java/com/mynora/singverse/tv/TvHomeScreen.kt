@@ -39,21 +39,23 @@ import org.json.JSONObject
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.height(upperHeight).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    HomeSectionHeading("我的收藏", "全部收藏", "favorites:all", onClick = { app.navigate("收藏") })
+                    HomeSectionHeading("我的收藏", "全部收藏", "favorites:all", titleSize = 22.sp) { app.navigate("收藏") }
                     if (favorites.isEmpty()) HomeSectionState(
                         Modifier.weight(1f), app.favoritesLoading, app.favoritesReady, app.favoritesError,
                         "还没有收藏歌曲", "在手机、后台添加，或播放时按「收藏」。", "favorites:retry", app::refreshFavorites,
                     ) else {
                         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                            val width = (maxWidth - 12.dp * 3) / 4
-                            // Preserve full song/artist lines when the canvas or font scale changes.
-                            val metadataHeight = with(LocalDensity.current) { 21.sp.toDp() + 18.sp.toDp() } + 15.dp
-                            val cover = minOf(width - 8.dp, maxHeight - metadataHeight).coerceAtLeast(1.dp)
+                            val landscape = favorites.size <= 2
+                            val columns = if (landscape) favorites.size else 4
+                            val width = (maxWidth - 12.dp * (columns - 1)) / columns
                             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 favorites.forEach { song ->
-                                    HomeFavoriteCard(app, song, Modifier.width(width).fillMaxHeight().focusProperties {
-                                        if (song.optString("id") == lastFavorite) right = memory.targets["$page:phone"] ?: FocusRequester.Default
-                                    }, cover)
+                                    val id = song.getString("id")
+                                    key(id) {
+                                        HomeFavoriteCard(app, song, landscape, Modifier.width(width).fillMaxHeight().focusProperties {
+                                            if (id == lastFavorite) right = memory.targets["$page:phone"] ?: FocusRequester.Default
+                                        })
+                                    }
                                 }
                             }
                         }
@@ -68,11 +70,11 @@ import org.json.JSONObject
                     HomeTile(Modifier.fillMaxWidth().height(56.dp).tvFocusTarget("search").focusProperties {
                         up = memory.targets["$page:phone"] ?: FocusRequester.Default
                         left = memory.targets["$page:favorite:$lastFavorite"] ?: FocusRequester.Default
-                    }, outlined = true, onClick = onSearch) {
+                    }, onClick = onSearch) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            HomeGlyph("search", Modifier.size(18.dp), Paper)
-                            Text("搜索歌曲", Modifier.weight(1f), color = Paper, fontSize = 14.sp, lineHeight = 20.sp)
+                            HomeGlyph("search", Modifier.size(20.dp), Accent)
+                            Text("搜索歌曲", Modifier.weight(1f), color = Paper, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
                             HomeGlyph("chevron", Modifier.size(14.dp), Muted)
                         }
                     }
@@ -117,20 +119,21 @@ import org.json.JSONObject
 }
 
 @Composable private fun HomeSectionHeading(
-    title: String, more: String, focusKey: String, icon: String? = null, subtitle: String = "", onClick: () -> Unit,
+    title: String, more: String, focusKey: String, icon: String? = null, subtitle: String = "",
+    titleSize: TextUnit = 19.sp, onClick: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (icon != null) HomeGlyph(icon, Modifier.size(16.dp), Muted)
-        Text(title, color = Paper, fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
+        Text(title, color = Paper, fontSize = titleSize, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
         if (subtitle.isNotEmpty()) Text(subtitle, color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
         Spacer(Modifier.weight(1f))
         var focused by remember { mutableStateOf(false) }
         Button(onClick, Modifier.height(28.dp).tvFocusTarget(focusKey).onFocusChanged { focused = it.isFocused }
-            .tvFocus(focused, TvShape.control), scale = ButtonDefaults.scale(focusedScale = 1f),
-            shape = ButtonDefaults.shape(TvShape.control), contentPadding = PaddingValues(horizontal = 8.dp),
+            .tvFocus(focused, GlassShape.pill), scale = ButtonDefaults.scale(focusedScale = 1f),
+            shape = ButtonDefaults.shape(GlassShape.pill), contentPadding = PaddingValues(horizontal = 10.dp),
             colors = ButtonDefaults.colors(containerColor = Color.Transparent, contentColor = Muted,
-                focusedContainerColor = Elevated, focusedContentColor = Paper)) {
+                focusedContainerColor = Glass.surfaceHover, focusedContentColor = Paper)) {
             Text(more, fontSize = 12.sp, lineHeight = 17.sp)
             Spacer(Modifier.width(4.dp))
             HomeGlyph("chevron", Modifier.size(11.dp), if (focused) Paper else Muted)
@@ -138,30 +141,47 @@ import org.json.JSONObject
     }
 }
 
-@Composable private fun HomeFavoriteCard(app: TvApp, song: JSONObject, modifier: Modifier, cover: Dp) {
+@Composable private fun HomeFavoriteCard(app: TvApp, song: JSONObject, landscape: Boolean, modifier: Modifier) {
     var focused by remember { mutableStateOf(false) }
     val available = song.optBoolean("available", true)
-    val shape = RoundedCornerShape(12.dp)
-    Button(onClick = { app.openSong(song) }, enabled = available, modifier = modifier.tvFocusTarget("favorite:${song.optString("id")}")
-        .onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape),
-        scale = ButtonDefaults.scale(focusedScale = 1f), contentPadding = PaddingValues(4.dp),
-        shape = ButtonDefaults.shape(shape), colors = ButtonDefaults.colors(containerColor = Color.Transparent,
-            contentColor = Paper, focusedContainerColor = Panel, focusedContentColor = Paper)) {
-        Column(Modifier.fillMaxSize()) {
-            Box(Modifier.align(Alignment.CenterHorizontally)) {
-                SongArtwork(app, song, Modifier.size(cover).alpha(if (available) 1f else .45f), shape = RoundedCornerShape(5.dp))
-                if (focused) Text(if (song.optBoolean("available", true)) "确认点歌" else "查看歌曲", color = Ink,
-                    fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(7.dp).fillMaxWidth()
-                        .background(Paper, RoundedCornerShape(6.dp)).padding(vertical = 5.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    val shape = TvShape.control
+    val surface = if (landscape) Glass.cardSurface else Color.Transparent
+    val artworkModifier = Modifier.alpha(if (available) 1f else .45f).tvFocus(focused, shape)
+    Button(
+        onClick = { app.openSong(song) },
+        enabled = available,
+        modifier = modifier.tvFocusTarget("favorite:${song.getString("id")}").onFocusChanged { focused = it.isFocused },
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        contentPadding = PaddingValues(if (landscape) 12.dp else 6.dp),
+        shape = ButtonDefaults.shape(shape),
+        colors = ButtonDefaults.colors(containerColor = surface, focusedContainerColor = surface, disabledContainerColor = surface),
+    ) {
+        if (landscape) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val cover = minOf(124.dp, maxWidth * .43f, maxHeight)
+                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    SongArtwork(app, song, Modifier.size(cover).then(artworkModifier), shape = shape)
+                    HomeFavoriteText(song, available, landscape = true, modifier = Modifier.weight(1f))
+                }
             }
-            Spacer(Modifier.height(7.dp))
-            Text(song.optString("title"), color = Paper, fontSize = 15.5.sp, lineHeight = 21.sp,
-                fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (song.optBoolean("available", true)) song.artists() else "${song.artists()} · 暂不可用",
-                color = Muted, fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                SongArtwork(app, song, Modifier.weight(1f, fill = false).aspectRatio(1f)
+                    .align(Alignment.CenterHorizontally).then(artworkModifier), shape = shape)
+                Spacer(Modifier.height(7.dp))
+                HomeFavoriteText(song, available, landscape = false)
+            }
         }
+    }
+}
+
+@Composable private fun HomeFavoriteText(song: JSONObject, available: Boolean, landscape: Boolean, modifier: Modifier = Modifier) {
+    val lines = if (landscape) 2 else 1
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 0.dp)) {
+        Text(song.optString("title"), color = Paper, fontSize = if (landscape) 20.sp else 15.5.sp,
+            lineHeight = if (landscape) 26.sp else 21.sp, fontWeight = FontWeight.Medium, maxLines = lines, overflow = TextOverflow.Ellipsis)
+        Text(if (available) song.artists() else "${song.artists()} · 暂不可用",
+            color = Muted, fontSize = 12.sp, lineHeight = 18.sp, maxLines = lines, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -170,14 +190,14 @@ import org.json.JSONObject
 ) {
     var focused by remember { mutableStateOf(false) }
     val available = song.optBoolean("available", true)
-    val shape = RoundedCornerShape(9.dp)
+    val shape = TvShape.control
     Button(onClick = { app.openSong(song) }, modifier.fillMaxWidth().tvFocusTarget(focusKey)
         .onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape),
         enabled = available,
-        contentPadding = PaddingValues(horizontal = if (rank == null) 4.dp else 9.dp, vertical = if (rank == null) 1.dp else 4.dp),
+        contentPadding = PaddingValues(horizontal = if (rank == null) 6.dp else 10.dp, vertical = if (rank == null) 2.dp else 5.dp),
         scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(shape),
-        colors = ButtonDefaults.colors(containerColor = if (rank == null) Color.Transparent else Color(0xFF171719),
-            contentColor = Paper, focusedContainerColor = Elevated, focusedContentColor = Paper)) {
+        colors = ButtonDefaults.colors(containerColor = if (rank == null) Color.Transparent else Glass.surface,
+            contentColor = Paper, focusedContainerColor = Glass.surfaceHover, focusedContentColor = Paper)) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
             if (rank != null) Text(rank.toString().padStart(2, '0'), color = Muted, fontSize = 12.sp, lineHeight = 18.sp,
                 modifier = Modifier.width(18.dp))
@@ -199,7 +219,7 @@ import org.json.JSONObject
     modifier: Modifier, loading: Boolean, ready: Boolean, error: String, emptyTitle: String, emptyDetail: String,
     retryKey: String, retry: () -> Unit,
 ) {
-    Column(modifier.fillMaxWidth().background(Panel.copy(alpha = .35f), TvShape.card).padding(12.dp),
+    Column(modifier.fillMaxWidth().glassSurface(TvShape.card).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(when { loading -> "正在读取…"; error.isNotBlank() || !ready -> "暂时无法读取"; else -> emptyTitle },
             color = Paper, fontSize = 13.sp, lineHeight = 19.sp)
@@ -223,7 +243,7 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
 }
 
 @Composable internal fun PhoneConnectionCard(app: TvApp, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    HomeTile(modifier.tvFocusTarget("phone"), translucent = true, onClick = onClick) {
+    HomeTile(modifier.tvFocusTarget("phone"), onClick = onClick) {
         Row(Modifier.fillMaxSize().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (app.invitation.isNotEmpty() && app.online) Qr(app.invitation, Modifier.size(80.dp))
             else Box(Modifier.size(80.dp).background(Paper, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
@@ -250,43 +270,42 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
 
 @Composable internal fun TvNavigation(label: String, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = GlassShape.pill
     Button(onClick, modifier.height(34.dp).semantics { this.selected = selected; stateDescription = if (selected) "当前页面" else "" }
-        .onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape), contentPadding = PaddingValues(horizontal = 18.dp),
+        .onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape),
+        contentPadding = PaddingValues(horizontal = 20.dp),
         scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(shape),
-        colors = ButtonDefaults.colors(containerColor = when { focused -> Elevated; selected -> Panel; else -> Color.Transparent },
-            contentColor = if (selected || focused) Paper else Muted, focusedContainerColor = Elevated, focusedContentColor = Paper)) {
-        Text(label, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
+        colors = ButtonDefaults.colors(containerColor = if (selected) Glass.surfaceStrong else Color.Transparent,
+            contentColor = if (selected) Paper else Muted,
+            focusedContainerColor = Glass.surfaceFocus, focusedContentColor = Paper)) {
+        Text(label, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium)
     }
 }
 
 @Composable internal fun HomeButton(label: String, modifier: Modifier = Modifier, primary: Boolean = false, focusKey: String = label, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    Button(onClick, modifier.height(34.dp).tvFocusTarget(focusKey).onFocusChanged { focused = it.isFocused }.tvFocus(focused, TvShape.control),
-        contentPadding = PaddingValues(horizontal = if (label in listOf("‹", "›")) 0.dp else 15.dp),
-        scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(TvShape.control),
-        colors = ButtonDefaults.colors(containerColor = if (primary) Paper else Elevated.copy(alpha = .86f), contentColor = if (primary) Ink else Paper,
-            focusedContainerColor = if (primary) Paper else Elevated, focusedContentColor = if (primary) Ink else Paper)) {
-        Text(label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Button(onClick, modifier.height(34.dp).tvFocusTarget(focusKey).onFocusChanged { focused = it.isFocused }.tvFocus(focused, GlassShape.pill),
+        contentPadding = PaddingValues(horizontal = if (label in listOf("‹", "›")) 0.dp else 16.dp),
+        scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(GlassShape.pill),
+        colors = ButtonDefaults.colors(containerColor = if (primary) Primary else Glass.surface, contentColor = if (primary) Ink else Paper,
+            focusedContainerColor = if (primary) Glass.surfaceFocus else Glass.surfaceHover, focusedContentColor = Paper)) {
+        Text(label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable private fun HomeTile(
     modifier: Modifier,
-    translucent: Boolean = false,
-    outlined: Boolean = false,
     onClick: () -> Unit,
     content: @Composable RowScope.() -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
-    Button(onClick, modifier.border(1.dp, Hairline.copy(alpha = .65f), shape)
-        .onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape),
+    val shape = TvShape.control
+    Button(onClick, modifier.onFocusChanged { focused = it.isFocused }.tvFocus(focused, shape),
         contentPadding = PaddingValues(0.dp), scale = ButtonDefaults.scale(focusedScale = 1f), shape = ButtonDefaults.shape(shape),
         colors = ButtonDefaults.colors(
-            containerColor = if (outlined) Color.Transparent else if (translucent) Panel else Panel.copy(alpha = .82f),
+            containerColor = Glass.cardSurface,
             contentColor = Paper,
-            focusedContainerColor = Elevated,
+            focusedContainerColor = Glass.surfaceFocus,
             focusedContentColor = Paper,
         ), content = content)
 }
@@ -307,6 +326,7 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
             "playlist" -> { for (i in 0..2) { drawCircle(color, s * .45f, Offset(w * .1f, h * (.2f + i * .28f))); line(.28f, .2f + i * .28f, .8f, .2f + i * .28f) }; line(.8f, .55f, .8f, .9f); drawOval(color, Offset(w * .56f, h * .78f), Size(w * .25f, h * .2f)) }
             "disc" -> { drawCircle(color, w * .43f, center, style = Stroke(s)); drawCircle(color, w * .12f, center, style = Stroke(s)); drawArc(color.copy(alpha = .5f), 210f, 90f, false, Offset(w * .2f, h * .2f), Size(w * .6f, h * .6f), style = Stroke(s)) }
             "chevron" -> { line(.38f, .22f, .64f, .5f); line(.64f, .5f, .38f, .78f) }
+            "check" -> { line(.2f, .52f, .41f, .73f); line(.41f, .73f, .81f, .29f) }
             "history" -> { drawCircle(color, w * .42f, center, style = Stroke(s)); line(.5f, .25f, .5f, .51f); line(.5f, .51f, .68f, .62f) }
             "trending" -> { line(.08f, .77f, .38f, .43f); line(.38f, .43f, .58f, .6f); line(.58f, .6f, .91f, .19f); line(.64f, .19f, .91f, .19f); line(.91f, .19f, .91f, .47f) }
             else -> { line(.5f, .2f, .5f, .8f); line(.2f, .5f, .8f, .5f) }

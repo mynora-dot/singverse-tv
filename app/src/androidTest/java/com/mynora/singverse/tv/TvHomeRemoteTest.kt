@@ -117,6 +117,37 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         screenshot("home-a-favorite-focus-restored").recycle()
     }
 
+    fun testHomeTwoFavoritesUseWideCardsAndKeepRemoteTraversal() {
+        val originalWidth = homeSongBounds(1).width()
+        fixture.homeFavoritesCount = 2
+        onMain { app.refreshFavorites() }
+        waitFor("两首收藏加载完成") { onMain { !app.favoritesLoading && app.favoriteSongs().size == 2 } }
+        val first = homeSongBounds(1)
+        val second = homeSongBounds(2)
+        assertTrue("两首收藏的卡片各占约一半收藏区", first.width() >= originalWidth * 1.8f && kotlin.math.abs(second.width() - first.width()) <= 1)
+        assertTrue("两张收藏左右排列", first.right <= second.left && first.centerY() == second.centerY())
+
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFor("下键进入第一首收藏", focusedAddressCondition("首页:favorite:test-song-1"))
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitFor("右键进入第二首收藏", focusedAddressCondition("首页:favorite:test-song-2"))
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitFor("从末首收藏右键进入手机点歌", focusedAddressCondition("首页:phone"))
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFor("从手机点歌下键进入搜索", focusedAddressCondition("首页:search"))
+        key(KeyEvent.KEYCODE_DPAD_LEFT)
+        waitFor("从搜索左键回到末首收藏", focusedAddressCondition("首页:favorite:test-song-2"))
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("确认打开第二首详情") {
+            onMain { app.selected?.optString("id") == "test-song-2" } && focusedAddress().endsWith(":action:加入待唱")
+        }
+        key(KeyEvent.KEYCODE_BACK)
+        waitFor("从详情返回同一首收藏", focusedAddressCondition("首页:favorite:test-song-2"))
+        assertTrue("浏览收藏期间队列保持空闲", fixture.commandRequests.isEmpty())
+        assertSingleVisibleFocus()
+        screenshot("home-a-two-favorites").recycle()
+    }
+
     fun testHomeUnavailableSongsAreDisabledAndNavigationSkipsThem() {
         fixture.unavailableSongIds = setOf("test-song-1", "test-song-5", "test-song-8")
         onMain { app.refreshFavorites(); app.refreshHomeActivity() }
@@ -443,6 +474,33 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         waitFor("确认分类卡片仍直接进入歌曲") { onMain { app.page == "找歌" && app.selectedTags == setOf("tag-genre") } && focusedAddress() == "找歌:song:test-song-1" }
         key(KeyEvent.KEYCODE_BACK)
         waitFor("歌曲返回仍保留风格维度和来源卡片") { focusedAddress() == "分类:category:tag-genre" }
+        assertSingleVisibleFocus()
+    }
+
+    fun testSongCenterCoversOpenSongAndRestoreRemoteFocus() {
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitFor("进入点歌中心", focusedAddressCondition("点歌:nav:点歌"))
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFor("下键进入点歌方式") { focusedAddress().startsWith("点歌:quick:") }
+        repeat(3) { if (focusedAddress() != "点歌:quick:0") key(KeyEvent.KEYCODE_DPAD_LEFT) }
+        waitFor("聚焦搜索入口", focusedAddressCondition("点歌:quick:0"))
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFor("下键进入曲库第一首歌曲", focusedAddressCondition("点歌:song:test-song-1"))
+        for (number in 2..8) {
+            key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            waitFor("右键选中曲库第 $number 首歌曲", focusedAddressCondition("点歌:song:test-song-$number"))
+        }
+        key(KeyEvent.KEYCODE_DPAD_LEFT)
+        val cover = "点歌:song:test-song-7"
+        waitFor("左键回到上一首", focusedAddressCondition(cover))
+        assertTrue("封面按钮具有歌曲名称", allNodes().any { it.isClickable && nodeLabel(it).contains("测试歌曲 07") })
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("确认打开对应歌曲详情") {
+            onMain { app.selected?.optString("id") == "test-song-7" } && focusedAddress().endsWith(":action:加入待唱")
+        }
+        key(KeyEvent.KEYCODE_BACK)
+        waitFor("详情返回恢复同一张曲库封面") { onMain { app.selected == null } && focusedAddress() == cover }
+        assertTrue("浏览曲库封面不能修改队列", fixture.commandRequests.isEmpty())
         assertSingleVisibleFocus()
     }
 
