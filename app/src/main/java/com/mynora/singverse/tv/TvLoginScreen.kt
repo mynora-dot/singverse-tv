@@ -131,8 +131,17 @@ private val LoginMuted = Muted
     val surfaceModifier = when {
         !enabled -> Modifier.glassSurface(shape, intensity = 0.4f, base = Glass.surfaceCard.copy(alpha = 0.45f), elevation = 0.dp)
         primary -> Modifier.brandGlassSurface(shape, focused = focused)
-        quiet -> Modifier.glassSurface(shape, highlighted = focused, intensity = if (focused) 0.9f else 0.5f, base = if (focused) Glass.surfaceFocus else Color.Transparent, elevation = if (focused) 8.dp else 0.dp)
-        else -> Modifier.glassSurface(shape, highlighted = focused, base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat, elevation = if (focused) 12.dp else 6.dp)
+        quiet -> Modifier.glassSurface(
+            shape,
+            highlighted = focused,
+            intensity = if (focused) 0.9f else 0.5f,
+            base = if (focused) Glass.surfaceFocus else Color.Transparent,
+        )
+        else -> Modifier.glassSurface(
+            shape,
+            highlighted = focused,
+            base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat,
+        )
     }
     Button(
         onClick = onClick,

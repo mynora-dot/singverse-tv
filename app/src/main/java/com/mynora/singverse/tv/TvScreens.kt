@@ -575,7 +575,6 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                 shape,
                 highlighted = focused,
                 base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat,
-                elevation = if (focused) 6.dp else 2.dp,
             )
             .tvFocus(focused, shape),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -1177,7 +1176,7 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                     .fillMaxWidth()
                     .wrapContentHeight()
                     .tvScreenEnter(group)
-                    .glassSurface(TvShape.panel, base = Glass.surfaceFloat, elevation = 3.dp)
+                    .glassSurface(TvShape.panel, base = Glass.surfaceFloat)
                     .clip(TvShape.panel)
                     .verticalScroll(rememberScrollState())
                     .padding(18.dp),
@@ -1291,7 +1290,7 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
             .tvSpringFocus(focused, scaleTarget = 1.022f, liftDp = 0.5.dp)
             .then(
                 when {
-                    focused -> Modifier.glassSurface(shape, highlighted = true, base = Glass.surfaceFocus, elevation = 4.dp)
+                    focused -> Modifier.glassSurface(shape, highlighted = true, base = Glass.surfaceFocus)
                     active -> Modifier.glassSurface(shape, highlighted = false, intensity = 0.85f, base = Glass.surfaceSelected, elevation = 0.dp)
                     else -> Modifier.glassSurface(shape, intensity = 0.45f, base = Color(0x0DFFFFFF), elevation = 0.dp)
                 }

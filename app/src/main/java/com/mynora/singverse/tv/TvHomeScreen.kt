@@ -38,7 +38,16 @@ import org.json.JSONObject
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(Modifier.height(upperHeight).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HomeSectionHeading("我的收藏", "全部收藏", "favorites:all", titleSize = 18.sp) { app.navigate("收藏") }
+                    HomeSectionHeading(
+                        "我的收藏",
+                        "全部收藏",
+                        "favorites:all",
+                        titleSize = 18.sp,
+                        actionModifier = Modifier.focusProperties {
+                            up = memory.targets["$page:nav:首页"] ?: FocusRequester.Default
+                            down = lastFavorite?.let { memory.targets["$page:favorite:$it"] } ?: FocusRequester.Default
+                        },
+                    ) { app.navigate("收藏") }
                     if (favorites.isEmpty()) HomeSectionState(
                         Modifier.weight(1f), app.favoritesLoading, app.favoritesReady, app.favoritesError,
                         "还没有收藏歌曲", "在手机、后台添加，或播放时按「收藏」。", "favorites:retry", app::refreshFavorites,
@@ -59,7 +68,10 @@ import org.json.JSONObject
                                                 .width(width)
                                                 .fillMaxHeight()
                                                 .focusProperties {
-                                                    if (id == lastFavorite) right = memory.targets["$page:phone"] ?: FocusRequester.Default
+                                                    if (id == lastFavorite) {
+                                                        up = memory.targets["$page:favorites:all"] ?: FocusRequester.Default
+                                                        right = memory.targets["$page:phone"] ?: FocusRequester.Default
+                                                    }
                                                 },
                                         )
                                     }
@@ -138,6 +150,7 @@ import org.json.JSONObject
     icon: String? = null,
     subtitle: String = "",
     titleSize: TextUnit = 16.5.sp,
+    actionModifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Row(
@@ -152,7 +165,7 @@ import org.json.JSONObject
         var focused by remember { mutableStateOf(false) }
         Button(
             onClick,
-            Modifier
+            actionModifier
                 .height(24.dp)
                 .tvFocusTarget(focusKey)
                 .onFocusChanged { focused = it.isFocused }

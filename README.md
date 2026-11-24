@@ -149,6 +149,8 @@ Go 提供同目录、同文件名主体的 `.lrc` / `.srt` / `.vtt`（小写扩�
 
 本仓库独立发布，正式版本由 GitHub Release 标签 `vMAJOR.MINOR.PATCH` 决定，Actions 自动注入 `SINGVERSE_VERSION`。`versionName` 等于注入的 `major.minor.patch`，`versionCode = major × 1000000 + minor × 1000 + patch`；minor、patch 不超过999，结果为正数且不超过2100000000。本地调试默认 `0.0.0` / versionCode 1；本地正式打包显式设置 `SINGVERSE_VERSION`。每次正式发布递增；不能覆盖已发布的标签或资产。发布时排除本次标签，读取上一正式版的完整元数据，校验 versionCode 递增及签名证书连续；网络、权限或旧元数据错误均使发布失败。首发仅在确实没有历史正式版时放行。
 
+发版时使用同一份中文变更说明创建注释标签和 Release 草稿。[中文标签与发布说明](https://github.com/mynora-dot/singverse-go-backend/blob/main/docs/multi-repository.md#中文标签与发布说明)
+
 `SINGVERSE_VERSION=0.0.2 make release` 要求环境提供 `SINGVERSE_TV_KEYSTORE`（文件路径）、`SINGVERSE_TV_STORE_PASSWORD`、`SINGVERSE_TV_KEY_ALIAS`、`SINGVERSE_TV_KEY_PASSWORD`，并运行 release lint。必须使用由发行方生成、备份并长期保管的正式签名，密钥不入库；不能使用 Debug 签名发布，也不能随版本重新生成正式密钥。普通 `make build` 不需要正式密钥。
 
 GitHub Actions Secrets 使用 `SINGVERSE_TV_KEYSTORE_BASE64`（正式 JKS 文件的 base64 内容）及上述密码、别名三项；CI 只在临时目录还原签名文件，构建后删除。首次发布前配置并安全备份长期签名，后续版本继续使用同一密钥。工作流仅由正式 GitHub Release 触发，普通 push/PR、草稿及 Pre-release 不发布；直接运行 `./gradlew --no-daemon -PsingverseSignRelease=true prepareTvRelease`，不运行单元测试或 lint。生成并核验 `app/build/tv-release/singverse-tv-{armeabi-v7a|arm64-v8a|x86|x86_64}.apk` 四个单架构 APK、`release.json` 和 `SHA256SUMS` 后上传；不生成或上传通用 APK。同标签重试逐文件读取已上传内容，完全相同则复用、缺失则补传、不同则拒绝，不覆盖旧文件。GitHub Release 正文写入 notes，最多16000 UTF-8字节；也可用资产脚本的 --notes 参数指定文件。资产生成期间 Go 镜像采集会因资产不全明确失败；两端正式发布完成后再发布 Go 管理平台。CI 尚未运行时不能宣称远程发布通过。

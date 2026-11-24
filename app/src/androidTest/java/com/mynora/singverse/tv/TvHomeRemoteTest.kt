@@ -117,6 +117,31 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         screenshot("home-a-favorite-focus-restored").recycle()
     }
 
+    fun testHomeAllFavoritesIsReachableWithThreeFavorites() {
+        fixture.homeFavoritesCount = 3
+        onMain { app.refreshFavorites() }
+        waitFor("三首收藏加载完成") { onMain { !app.favoritesLoading && app.favoriteSongs().size == 3 } }
+
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFor("下键进入第一首收藏", focusedAddressCondition("首页:favorite:test-song-1"))
+        repeat(2) { key(KeyEvent.KEYCODE_DPAD_RIGHT) }
+        waitFor("右键到达末首收藏", focusedAddressCondition("首页:favorite:test-song-3"))
+        key(KeyEvent.KEYCODE_DPAD_UP)
+        waitFor("从末首收藏上键进入全部收藏", focusedAddressCondition("首页:favorites:all"))
+        assertSingleVisibleFocus()
+
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFor("从全部收藏下键回到末首收藏", focusedAddressCondition("首页:favorite:test-song-3"))
+        key(KeyEvent.KEYCODE_DPAD_UP)
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("确认打开收藏列表") { onMain { app.page == "收藏" && !activity.focusMemory.restoring } }
+        key(KeyEvent.KEYCODE_BACK)
+        waitFor("从收藏列表返回全部收藏", focusedAddressCondition("首页:favorites:all"))
+        key(KeyEvent.KEYCODE_DPAD_UP)
+        waitFor("从全部收藏上键返回首页导航", focusedAddressCondition("首页:nav:首页"))
+        assertSingleVisibleFocus()
+    }
+
     fun testHomeTwoFavoritesUseWideCardsAndKeepRemoteTraversal() {
         val originalWidth = homeSongBounds(1).width()
         fixture.homeFavoritesCount = 2
