@@ -222,13 +222,13 @@ import androidx.tv.material3.Text
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val isVisuallyFocused = focused && windowFocused
     val onAccent = enabled && (primary || (selected && compact))
-    val textColor = if (onAccent) OnBrand else Paper
+    val usePlatinumFocus = enabled && !onAccent
     val surfaceModifier = when {
         !enabled -> Modifier.glassSurface(shape, intensity = 0.36f, base = Glass.surfaceCard.copy(alpha = 0.45f), elevation = 0.dp)
-        primary -> Modifier.brandGlassSurface(shape, focused = isVisuallyFocused)
-        selected && compact -> Modifier.brandGlassSurface(shape, focused = isVisuallyFocused)
-        selected -> Modifier.glassSurface(shape, highlighted = isVisuallyFocused, base = if (isVisuallyFocused) Glass.surfaceFocus else Glass.surfaceFloat, tintAccent = Brand.copy(alpha = 0.14f), elevation = if (isVisuallyFocused) 10.dp else 3.dp)
-        else -> Modifier.glassSurface(shape, highlighted = isVisuallyFocused, intensity = if (isVisuallyFocused) 1f else 0.72f, base = if (isVisuallyFocused) Glass.surfaceFocus else Glass.surfaceFloat, elevation = if (isVisuallyFocused) 10.dp else 3.dp)
+        onAccent -> Modifier.brandGlassSurface(shape, focused = isVisuallyFocused).tvFocus(isVisuallyFocused, shape)
+        isVisuallyFocused && usePlatinumFocus -> Modifier.tvPlatinumFocus(true, shape)
+        selected -> Modifier.glassSurface(shape, highlighted = false, base = Color(0x20FFFFFF), elevation = 0.dp)
+        else -> Modifier.glassSurface(shape, highlighted = false, intensity = 0.72f, base = Glass.surfaceCard, elevation = 0.dp)
     }
     Button(
         onClick = onClick,
@@ -237,9 +237,8 @@ import androidx.tv.material3.Text
             .height(if (compact) 34.dp else 38.dp)
             .tvFocusTarget("action:$focusKey")
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(isVisuallyFocused && enabled, scaleTarget = 1.04f, liftDp = 0.8.dp)
+            .tvSpringFocus(isVisuallyFocused && enabled, scaleTarget = 1.045f, liftDp = 0.8.dp)
             .then(surfaceModifier)
-            .tvFocus(isVisuallyFocused, shape)
             .semantics {
                 this.selected = selected
                 if (!enabled) stateDescription = "不可用"
@@ -248,16 +247,16 @@ import androidx.tv.material3.Text
         shape = ButtonDefaults.shape(shape),
         colors = ButtonDefaults.colors(
             containerColor = Color.Transparent,
-            contentColor = textColor,
+            contentColor = if (onAccent) OnBrand else Paper,
             focusedContainerColor = Color.Transparent,
-            focusedContentColor = textColor,
+            focusedContentColor = if (onAccent) OnBrand else Glass.focusInk,
             disabledContainerColor = Color.Transparent,
             disabledContentColor = Muted.copy(alpha = .5f),
         ),
         contentPadding = PaddingValues(horizontal = if (compact) 12.dp else 13.dp, vertical = 4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            if (selected) HomeGlyph("check", Modifier.size(13.dp), if (onAccent) OnBrand else if (enabled) Brand else LocalContentColor.current)
+            if (selected) HomeGlyph("check", Modifier.size(13.dp), if (onAccent) OnBrand else if (isVisuallyFocused) Glass.focusInk else if (enabled) Paper else LocalContentColor.current)
             else PlayerControlGlyph(icon, LocalContentColor.current)
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
