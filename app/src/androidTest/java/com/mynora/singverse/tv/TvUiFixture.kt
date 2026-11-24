@@ -203,7 +203,8 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
         }
         path.endsWith("/snapshot") || path.endsWith("/recover") || path == "/api/v1/tv/sessions" -> currentSnapshot().toString()
         path == "/api/v1/tv/home" -> JSONObject().put("recentSongs", JSONArray(songs())).put("totalSongs", 20)
-            .put("server", JSONObject().put("name", "UI 验收测试服务")).put("appearance", appearance()).put("featuredPlaylists", JSONArray(playlists())).toString()
+            .put("server", JSONObject().put("name", "UI 验收测试服务"))
+            .put("featuredPlaylists", JSONArray(playlists())).toString()
         path == "/api/v1/tv/favorites" -> {
             val defaults = songs(songCount, mixedSongMetadata).drop(homeSongOffset).take(homeFavoritesCount).map { it.getString("id") }.toSet()
             if (body.has("selected")) {
@@ -322,9 +323,6 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
                 output.toByteArray()
             }
         }
-
-        fun appearance(): JSONObject = JSONObject().put("headline", "遥控器验收 · 测试曲库")
-            .put("subtitle", "仅测试数据，不访问真实 NAS").put("autoRotate", false).put("banners", JSONArray())
     }
 }
 

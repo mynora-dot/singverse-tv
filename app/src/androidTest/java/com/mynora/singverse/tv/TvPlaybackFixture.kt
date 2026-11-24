@@ -174,7 +174,7 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
         path.endsWith("/snapshot") || path.endsWith("/recover") || path == "/api/v1/tv/sessions" -> snapshot().toString()
         path == "/api/v1/tv/home" -> JSONObject().put("recentSongs", JSONArray(songs())).put("totalSongs", songs().size)
             .put("server", JSONObject().put("name", "播放器验收测试服务"))
-            .put("appearance", TvUiFixture.appearance()).put("featuredPlaylists", JSONArray()).toString()
+            .put("featuredPlaylists", JSONArray()).toString()
         path.endsWith("/text-tracks") -> {
             val empty = path.substringBeforeLast('/').endsWith("test-song-3")
             JSONObject().put("items", if (empty) JSONArray() else JSONArray().put(JSONObject()

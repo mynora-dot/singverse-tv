@@ -67,7 +67,6 @@ class TvUiFixtureActivity : ComponentActivity() {
             songs = homeSongs
             homeTotal = homeSongs.size.toLong()
             total = homeTotal
-            homeAppearance = TvUiFixture.appearance()
             ensureInvitation()
             // Exercise the same HTTP readers as a connected TV instead of filling home state directly.
             refreshFavorites()

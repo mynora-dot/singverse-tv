@@ -44,9 +44,14 @@ class TvClient(context: Context) {
     }
     @Synchronized fun clear() { connectionGeneration++; imageRequests.clear(); covers.evictAll(); token = ""; preferences.edit().remove("token").apply() }
     suspend fun image(path: String, revision: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        val limit = when {
+            path.startsWith("/api/v1/tv/library/classification-tags/") ||
+                path.startsWith("/api/v1/tv/library/artists/") -> 1280
+            path.startsWith("/api/v1/tv/library/songs/") -> 512
+            else -> return@withContext null
+        }
         val (address, credential, generation) = synchronized(this@TvClient) { Triple(base, token, connectionGeneration) }
         val key="$generation:$address$path@$revision"
-        if (!path.startsWith("/api/v1/tv/home/banners/") && !path.startsWith("/api/v1/tv/library/songs/") && !path.startsWith("/api/v1/tv/library/classification-tags/") && !path.startsWith("/api/v1/tv/library/artists/")) return@withContext null
         imageRequests.load(key) {
             val bytes = TvImageTransport.read(address, credential, path) ?: return@load null
             currentCoroutineContext().ensureActive()
@@ -54,7 +59,6 @@ class TvClient(context: Context) {
             android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,options)
             if(options.outWidth<=0 || options.outHeight<=0)return@load null
             options.inSampleSize=1
-            val limit=if(path.startsWith("/api/v1/tv/home/banners/") || path.startsWith("/api/v1/tv/library/classification-tags/") || path.startsWith("/api/v1/tv/library/artists/"))1280 else 512
             while(maxOf(options.outWidth/options.inSampleSize,options.outHeight/options.inSampleSize)>limit)options.inSampleSize*=2
             options.inJustDecodeBounds=false
             currentCoroutineContext().ensureActive()

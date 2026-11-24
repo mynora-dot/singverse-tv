@@ -336,7 +336,6 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private var activeRequests = 0
     var snapshot by mutableStateOf(JSONObject())
     var homeSongs by mutableStateOf(listOf<JSONObject>())
-    var homeAppearance by mutableStateOf(JSONObject())
     var homePlaylists by mutableStateOf(listOf<JSONObject>())
     var homeTotal by mutableLongStateOf(0)
     var serverName by mutableStateOf("SingVerse")
@@ -844,7 +843,6 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         val result = json("/api/v1/tv/home")
         if (client.base != server || client.token != credential || client.connectionGeneration != connectionGeneration) return
         homeSongs = result.getJSONArray("recentSongs").objects()
-        homeAppearance = result.optJSONObject("appearance") ?: JSONObject()
         homePlaylists = result.optJSONArray("featuredPlaylists")?.objects().orEmpty()
         homeTotal = result.getLong("totalSongs")
         serverName = result.getJSONObject("server").optString("name", "SingVerse")
@@ -1295,7 +1293,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         participantsKnown = false
         lastParticipantsRefresh = 0
     }
-    fun disconnect() { resetHomeActivity(); sharedFavorites.reset(); currentSongGeneration++; currentSong=null; playbackMedia=JSONObject(); observedVideo=false; observedAudio=false; selectedAudioFormat=null; embeddedCues=emptyList(); login.open(LoginPage.METHODS);playlistGeneration++;playlistDetail=null;playlists=emptyList();playlistPage=0;playlistQuery="";playlistTotal=0;lastPlaylistId=""; stopLocal();loadedAttempt="";pendingOperation=null;resetUpdates();online=false; client.clear(); sharedFavorites.reset(); resetHomeActivity(); connected = false; login.cancel(); snapshot = JSONObject(); clearPartyConnection(); artistDetail=null;artistDetailGeneration++;lastArtistId=""; selected = null; homeSongs = emptyList(); homeAppearance = JSONObject(); homePlaylists = emptyList(); songs = emptyList(); artists = emptyList(); tags = emptyList(); participants = emptyList(); homeTotal = 0; artistTotal = 0; total = 0; query = ""; artistQuery = ""; number = 0; artistPage = 0; artistId = ""; selectedTags = emptySet(); unclassified = false; requestGeneration++; artistGeneration++; detailGeneration++ }
+    fun disconnect() { resetHomeActivity(); sharedFavorites.reset(); currentSongGeneration++; currentSong=null; playbackMedia=JSONObject(); observedVideo=false; observedAudio=false; selectedAudioFormat=null; embeddedCues=emptyList(); login.open(LoginPage.METHODS);playlistGeneration++;playlistDetail=null;playlists=emptyList();playlistPage=0;playlistQuery="";playlistTotal=0;lastPlaylistId=""; stopLocal();loadedAttempt="";pendingOperation=null;resetUpdates();online=false; client.clear(); sharedFavorites.reset(); resetHomeActivity(); connected = false; login.cancel(); snapshot = JSONObject(); clearPartyConnection(); artistDetail=null;artistDetailGeneration++;lastArtistId=""; selected = null; homeSongs = emptyList(); homePlaylists = emptyList(); songs = emptyList(); artists = emptyList(); tags = emptyList(); participants = emptyList(); homeTotal = 0; artistTotal = 0; total = 0; query = ""; artistQuery = ""; number = 0; artistPage = 0; artistId = ""; selectedTags = emptySet(); unclassified = false; requestGeneration++; artistGeneration++; detailGeneration++ }
     fun newSession() = run { acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession=true); declarePartyCapabilities(); ensureInvitation() }
     fun close() { resetUpdates(); releasePlaybackHistory(); login.close(); resourceGeneration++; releaseExecution(); discovery.stop(); playbackOptions.close(); scope.cancel(); player.release() }
 }

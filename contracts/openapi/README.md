@@ -120,7 +120,7 @@ WebDAV 使用保存的地址和加密凭据在服务端发起 GET/HEAD，转发 
 
 ### TV 首页与当前歌曲详情
 
-`GET /api/v1/tv/home` 仅设备可读，返回稳定服务身份 `server`、全库现存歌曲数 `totalSongs`、按扫描时间倒序/ID 升序的前 8 首 `recentSongs` 和 `generatedAt`。它不接收找歌筛选参数，不以推荐、热度或演唱历史名义包装扫描顺序。
+`GET /api/v1/tv/home` 仅设备可读，返回稳定服务身份 `server`、全库现存歌曲数 `totalSongs`、按扫描时间倒序/ID 升序的前 8 首 `recentSongs`、最多 4 个共享歌单 `featuredPlaylists` 和 `generatedAt`。它不接收找歌筛选参数，不以推荐、热度或演唱历史名义包装扫描顺序。
 
 `GET /api/v1/tv/library/songs/{id}` 读取当前歌曲展示投影，歌曲移除返回 404。投影沿用已应用元数据/文件标签与文件名解析的现有优先级，新增可用的 album、releaseDate、durationMs、scannedAt 与不透明 revision；无依据字段省略或 null，不补假值。revision 包含元数据和分类变化，供封面重载使用，不暴露路径或来源凭据。所有设备/参与者仍遵循现有授权；首页不对参与者开放。
 
@@ -157,15 +157,6 @@ compute 内部 `/internal/v1/audio-roles/tasks` 接收固定 UUID、mode=PROBE|A
 `/api/v1/audio-processing` 为管理员伴奏中心：歌曲分页筛选、持久批次预览/提交/详情/取消/重试、单项取消、当前节点及模型下载/导入/试跑/选择。变更请求继续使用管理员会话和CSRF；上传按固定 `model` 参数接受有界原始权重或多文件模型 ZIP，省略参数兼容 htdemucs。基准上限 100MiB，htdemucs-openvino 上限 128MiB，未知模型及超限拒绝。compute内部 `/internal/v1/audio-roles/models` 使用Bearer鉴权，模型下载仅使用固定清单；原有单曲音轨接口保留。
 
 节点响应保留原 `model` 字段，并增加 `models`、`build` 和 `deployment`；后端支持 `openvino`，当前镜像未包含时返回 `IMAGE_MISSING`。可用资格绑定构建、运行库、设备与模型摘要；变更后须重新试跑。镜像构建及模型安装不等于硬件通过验收。
-
-## 电视首页个性化
-
-Go 服务内嵌8张音乐主题默认封面，无需外部图片服务。首次启动仅在首页 revision=0 且无封面时原子初始化并启用，既有设置与图片不覆盖；改名、排序、停用、移除沿用现有接口，删除后重启不补回。默认图片来源及提示词见 [封面资源说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/internal/party/assets/home/README.md)。
-
-新增`/api/v1/admin/tv-settings`及封面上传/删除/图片接口：管理员Cookie读取，写入再验证CSRF与全局revision；上限8张JPEG/PNG，单张2,000,000字节、4096像素，归一为最长边1280px的JPEG。上传即保存并启用；PUT完整保存文案、轮播设置与全部已有图片的启停/顺序，不能通过PUT增删图片。冲突409，不静默覆盖。
-
-`GET /api/v1/tv/home`兼容增加`appearance`与`featuredPlaylists`，后者最多4个已保存共享歌单；配置按数组顺序提供已启用图片。`GET /api/v1/tv/home/banners/{id}/image`只接受已授权device，不接受亲友participant；删除或禁用404。全部图片接口no-store，元数据含稳定内容版本，TV可自行有界缓存。没有公开静态图片路径或外部URL代理。
-
 
 ## 歌曲缓存（HLS 与原片）
 
