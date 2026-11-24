@@ -32,6 +32,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +78,12 @@ internal class TvFocusMemory {
     val last = mutableMapOf<String, String>()
     val focusedTargets = mutableSetOf<String>()
     val targets = mutableMapOf<String, FocusRequester>()
+    val home = TvHomeFocusMemory()
+
+    fun rememberFocus(page: String, key: String) {
+        if (page == "首页") home.focused(key, last[page])
+        last[page] = key
+    }
 
     fun restore(page: String): Boolean {
         val key = last[page] ?: return false
@@ -95,18 +103,29 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
     DisposableEffect(memory, page, key) {
         val address = "$page:$key"
         memory.targets[address] = requester
-        if (focused) { if (!memory.restoring) memory.last[page] = key; memory.focusedTargets.add(address) }
+        if (focused) { if (!memory.restoring) memory.rememberFocus(page, key); memory.focusedTargets.add(address) }
         onDispose {
-            if (memory.targets[address] === requester) memory.targets.remove(address)
+            if (memory.targets[address] === requester) {
+                memory.targets.remove(address)
+                if (page == "首页") memory.home.forgetPosition(key)
+            }
             memory.focusedTargets.remove(address)
         }
     }
-    return this.focusProperties { canFocus = canReceiveFocus }.focusRequester(requester).onFocusChanged {
-        focused = it.isFocused
-        val address = "$page:$key"
-        if (it.isFocused) { if (!memory.restoring) memory.last[page] = key; memory.focusedTargets.add(address) }
-        else memory.focusedTargets.remove(address)
-    }
+    val position = if (page == "首页") Modifier.onGloballyPositioned {
+        memory.home.position(key, it.positionInRoot().x + it.size.width / 2f)
+    } else Modifier
+    return this.focusProperties { canFocus = canReceiveFocus }
+        .focusRequester(requester)
+        .onFocusChanged {
+            focused = it.isFocused
+            val address = "$page:$key"
+            if (it.isFocused) {
+                if (!memory.restoring) memory.rememberFocus(page, key)
+                memory.focusedTargets.add(address)
+            } else memory.focusedTargets.remove(address)
+        }
+        .then(position)
 }
 
 /**
@@ -350,6 +369,7 @@ internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.c
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable internal fun Input(value: String, hint: String, onChange: (String) -> Unit) {
     var editing by remember { mutableStateOf(false) }
     var restoreFocus by remember { mutableStateOf(false) }
@@ -358,6 +378,8 @@ internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.c
     val keyboard = LocalSoftwareKeyboardController.current
     val buttonFocus = remember { FocusRequester() }
     val editorFocus = remember { FocusRequester() }
+    val imeVisible = WindowInsets.isImeVisible
+    var imeShown by remember(editing) { mutableStateOf(false) }
     LaunchedEffect(editing) {
         if (editing) {
             editorFocus.requestFocus()
@@ -368,6 +390,12 @@ internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.c
         }
     }
     fun finishEditing() { restoreFocus = true; editing = false; keyboard?.hide() }
+    LaunchedEffect(editing, imeVisible) {
+        if (editing) {
+            if (imeVisible) imeShown = true
+            else if (imeShown) finishEditing()
+        }
+    }
     BackHandler(editing) { finishEditing() }
     if (!editing) {
         val shape = GlassShape.pill
@@ -422,6 +450,13 @@ internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.c
             .focusRequester(editorFocus)
             .tvFocusTarget("input:$hint")
             .onFocusChanged { editorFocused = it.isFocused }
+            .onPreInterceptKeyBeforeSoftKeyboard { event ->
+                if (event.key != Key.Back) false
+                else {
+                    if (event.type == KeyEventType.KeyUp && !event.nativeKeyEvent.isCanceled) finishEditing()
+                    true
+                }
+            }
             .glassSurface(GlassShape.pill, highlighted = editorFocused, base = Glass.surfaceFocus, elevation = 8.dp)
             .tvFocus(editorFocused, GlassShape.pill)
             .padding(horizontal = 18.dp, vertical = 10.dp),

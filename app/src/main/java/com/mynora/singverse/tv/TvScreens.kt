@@ -166,18 +166,31 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
     val popularSongs = rememberLazyListState()
     var handledSongListReset by remember { mutableIntStateOf(app.songListResetVersion) }
     val homeFocus = remember { FocusRequester() }
+    val home = if (view == "首页") TvHomeFocusRoutes(
+        memory, app.favoriteSongs().take(4), app.homeHistorySongs.take(4), app.homePopularSongs.take(4),
+    ) else null
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val selectedNavigation = when {
-        app.page in listOf("收藏", "历史记录", "热门歌曲") -> "首页"
+        app.page in listOf("首页", "收藏", "历史记录", "热门歌曲") -> "首页"
         app.selected != null || app.page in listOf("找歌", "歌手", "分类", "歌单", "点歌") -> "点歌"
         else -> app.page
     }
-    val activityFocusItems = when (app.page) {
-        "首页" -> app.favoriteSongs().take(4) + app.homeHistorySongs.take(4) + app.homePopularSongs.take(4)
+    val activityFocusItems = home?.availability ?: when (app.page) {
         "历史记录" -> app.homeHistorySongs
         "热门歌曲" -> app.homePopularSongs
         else -> emptyList()
-    }.map { it.optString("id") to it.optBoolean("available", true) }
+    }.associate { it.optString("id") to it.optBoolean("available", true) }
+    val homeRetries = home?.let {
+        listOf(
+            it.favorites.isEmpty() && showsHomeRetry(app.favoritesLoading, app.favoritesReady, app.favoritesError),
+            it.history.isEmpty() && showsHomeRetry(app.homeHistoryLoading, app.homeHistoryReady, app.homeHistoryError),
+            it.popular.isEmpty() && showsHomeRetry(app.homePopularLoading, app.homePopularReady, app.homePopularError),
+        )
+    }
+    if (memory.activeDialogs == 0 && home?.unavailableSong(memory.last[view]) == true) {
+        // Keep the previous song address until the home shelf chooses its replacement.
+        memory.restoring = true
+    }
     fun selectNavigation(destination: String) {
         if (app.page == destination && app.selected == null && app.artistDetail == null && app.playlistDetail == null) return
         // Selecting a tab must keep focus in the navigation, even if its page remembers content focus.
@@ -188,7 +201,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
     LaunchedEffect(app.connected, app.page) {
         if (!app.connected || app.page !in listOf("首页", "找歌")) homeSearchOpen = false
     }
-    LaunchedEffect(app.connected, view, memory.restoreVersion, windowFocused, app.songListResetVersion, activityFocusItems) {
+    LaunchedEffect(app.connected, view, memory.restoreVersion, windowFocused, app.songListResetVersion, activityFocusItems.entries.toList(), homeRetries) {
         if (app.connected && memory.activeDialogs == 0 && windowFocused) {
             val navigation = "nav:$selectedNavigation"
             if (app.page == selectedNavigation && memory.last[view] == navigation && memory.focusedTargets.singleOrNull() == "$view:$navigation") {
@@ -196,6 +209,10 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                 memory.restoring = false
                 return@LaunchedEffect
             }
+            val focused = memory.last[view]
+            if (home != null && !memory.restoring && focused != null &&
+                !home.unavailableSong(focused) && memory.focusedTargets.singleOrNull() == "$view:$focused"
+            ) return@LaunchedEffect
             memory.restoring = true
             withFrameNanos { }; withFrameNanos { }
             if (memory.activeDialogs > 0) return@LaunchedEffect
@@ -247,15 +264,17 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                 }
             }
             withFrameNanos { }
-            if (!memory.restore(view) && app.page != "演唱") {
+            if ((home?.unavailableSong(target) == true || !memory.restore(view)) && app.page != "演唱") {
+                val homeEntry = home?.restoredEntry(target)
                 val default = when {
+                    homeEntry != null -> homeEntry
                     app.selected != null -> "action:加入待唱"
                     app.playlistDetail != null -> "action:返回歌单"
                     app.artistDetail != null -> "action:返回歌手"
                     else -> null
                 }
                 if (default != null) {
-                    memory.last[view] = default
+                    memory.rememberFocus(view, default)
                     memory.targets["$view:$default"]?.requestFocus()
                 } else {
                     memory.last[view] = "nav:$selectedNavigation"
@@ -319,9 +338,10 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                                 (if (page == selectedNavigation) Modifier.focusRequester(homeFocus) else Modifier)
                                     .tvFocusTarget("nav:$page")
                                     .focusProperties {
-                                        if (app.page == "首页" && page == "首页") {
-                                            val first = app.favoriteSongs().take(4).firstOrNull { it.optBoolean("available", true) }?.optString("id")
-                                            down = memory.targets["$view:${if (first == null) "favorites:all" else "favorite:$first"}"] ?: FocusRequester.Default
+                                        if (home != null && page == "首页") {
+                                            left = FocusRequester.Cancel
+                                            up = FocusRequester.Cancel
+                                            down = home.target(home.navigationEntry())
                                         }
                                         if (app.page == "设置" && page == "设置") {
                                             down = memory.targets["$view:action:连接"] ?: FocusRequester.Default
@@ -355,7 +375,19 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                     else if (app.playlistDetail != null) PlaylistDetail(app, playlistSongs)
                     else if (app.artistDetail != null) ArtistDetail(app, artistSongs)
                     else when (app.page) {
-                        "首页" -> TvHomeScreen(app, onSearch = { homeSearchOpen = true; app.navigate("找歌") }) { if (!app.online) app.reconnect(); app.ensureInvitation(); invitationOpen = true }
+                        "首页" -> TvHomeScreen(
+                            app, checkNotNull(home),
+                            onSearch = {
+                                homeSearchOpen = true
+                                memory.last["找歌"] = "action:$SongSearchHint"
+                                app.navigate("找歌")
+                            },
+                            onPhone = {
+                                if (!app.online) app.reconnect()
+                                app.ensureInvitation()
+                                invitationOpen = true
+                            },
+                        )
                         "历史记录" -> TvHomeActivityScreen(app, popular = false, state = historySongs)
                         "热门歌曲" -> TvHomeActivityScreen(app, popular = true, state = popularSongs)
                         "点歌" -> SongCenter(app)
@@ -370,7 +402,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                 }
                 if (app.page != "已点") {
                     val compact = app.page == "首页" || (app.page == "点歌" && app.selected == null)
-                    SingingBar(app, compact = compact)
+                    SingingBar(app, compact = compact, home = home)
                 }
             }
         }
@@ -648,7 +680,7 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     }
 }
 
-@Composable private fun SingingBar(app: TvApp, compact: Boolean = false) {
+@Composable private fun SingingBar(app: TvApp, compact: Boolean = false, home: TvHomeFocusRoutes? = null) {
     val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" }
     val next = queue.firstOrNull { it.optString("status") == "HANDOFF" } ?: queue.firstOrNull { it.optString("status") == "WAITING" }
@@ -657,6 +689,14 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     val artSize = if (compact) 32.dp else 36.dp
     val buttonSize = Modifier.height(if (compact) 30.dp else 32.dp)
     val idle = song == null && current == null
+    val primaryKey = when {
+        app.snapshot.optString("status") == "ENDED" -> "bar:session"
+        current == null && next != null -> "bar:start"
+        current != null || app.snapshot.optJSONObject("playback")?.optString("songId").orEmpty().isNotEmpty() -> "bar:sing"
+        else -> null
+    }
+    val controls = listOfNotNull("bar:reconnect".takeIf { !app.online }, "bar:queue", primaryKey)
+    fun control(key: String) = buttonSize.then(home?.bottom(controls, key) ?: Modifier)
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Row(
             Modifier
@@ -718,13 +758,12 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (!app.online) HomeButton("网络异常 · 重连", buttonSize, focusKey = "bar:reconnect") { app.reconnect() }
-            HomeButton("已点歌曲 (${queuedSongCount(app)})", buttonSize, focusKey = "bar:queue") { app.navigate("已点") }
-            when {
-                app.snapshot.optString("status") == "ENDED" -> HomeButton("开始新聚会", buttonSize, primary = true, focusKey = "bar:session") { app.newSession() }
-                current == null && next != null -> HomeButton("确认开唱", buttonSize, primary = true, focusKey = "bar:start") { app.command("START") }
-                current != null || app.snapshot.optJSONObject("playback")?.optString("songId").orEmpty().isNotEmpty() ->
-                    HomeButton("返回演唱", buttonSize, primary = current != null, focusKey = "bar:sing") { app.page = "演唱" }
+            if (!app.online) HomeButton("网络异常 · 重连", control("bar:reconnect"), focusKey = "bar:reconnect") { app.reconnect() }
+            HomeButton("已点歌曲 (${queuedSongCount(app)})", control("bar:queue"), focusKey = "bar:queue") { app.navigate("已点") }
+            when (primaryKey) {
+                "bar:session" -> HomeButton("开始新聚会", control(primaryKey), primary = true, focusKey = primaryKey) { app.newSession() }
+                "bar:start" -> HomeButton("确认开唱", control(primaryKey), primary = true, focusKey = primaryKey) { app.command("START") }
+                "bar:sing" -> HomeButton("返回演唱", control(primaryKey), primary = current != null, focusKey = primaryKey) { app.page = "演唱" }
             }
         }
     }
@@ -754,6 +793,8 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     }
 }
 
+private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
+
 @Composable private fun Library(app: TvApp, list: LazyListState) {
     val hasFilters = app.selectedTags.isNotEmpty() || app.unclassified || app.artistId.isNotBlank() || app.query.isNotBlank()
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -762,7 +803,7 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.weight(1f)) { Input(app.query, "搜索歌名、歌手、拼音或编号") { app.query = it } }
+            Box(Modifier.weight(1f)) { Input(app.query, SongSearchHint) { app.query = it } }
             Text(
                 "${app.total} 首${if (app.selectedTags.isNotEmpty()) " · ${app.selectedTags.size} 项分类" else ""}",
                 color = Muted,
@@ -1122,7 +1163,12 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                             shape = GlassShape.pill,
                             fillWidth = true,
                         ) {
-                            app.command("ADD", songId = song.getString("id")); app.selected = null
+                            if (app.page == "首页") {
+                                app.addSongFromHomeDetail(song)
+                            } else {
+                                app.command("ADD", songId = song.getString("id"))
+                                app.selected = null
+                            }
                         }
                         Action(
                             "返回曲库",
