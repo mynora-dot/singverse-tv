@@ -104,14 +104,14 @@ import org.json.JSONObject
                             },
                         shape = GlassShape.pill,
                         onClick = onSearch,
-                    ) {
+                    ) { tileFocused ->
                         Row(
                             Modifier.fillMaxSize().padding(horizontal = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                         ) {
-                            HomeGlyph("search", Modifier.size(15.dp), Paper.copy(alpha = 0.85f))
-                            Text("搜索歌曲", color = Paper, fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            HomeGlyph("search", Modifier.size(15.dp), if (tileFocused) Glass.champagneBright else Muted)
+                            Text("搜索歌曲", color = if (tileFocused) Paper else Paper.copy(alpha = 0.90f), fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -204,15 +204,15 @@ import org.json.JSONObject
         modifier = modifier
             .tvFocusTarget("favorite:${song.getString("id")}")
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused && available, scaleTarget = 1.038f)
+            .tvSpringFocus(focused && available, scaleTarget = 1.05f, liftDp = 1.5.dp)
             .then(
                 if (landscape) Modifier
-                    .glassSurface(shape, highlighted = focused, base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat, elevation = if (focused) 6.dp else 3.dp)
+                    .glassSurface(shape, highlighted = focused, base = if (focused) Glass.surfaceFocus else Glass.surfaceCard, elevation = if (focused) 8.dp else 4.dp)
                     .tvFocus(focused, shape)
                 else Modifier
             ),
         scale = ButtonDefaults.scale(focusedScale = 1f),
-        contentPadding = PaddingValues(if (landscape) 12.dp else 2.dp),
+        contentPadding = PaddingValues(if (landscape) 12.dp else 3.dp),
         shape = ButtonDefaults.shape(shape),
         colors = ButtonDefaults.colors(
             containerColor = Color.Transparent,
@@ -235,11 +235,12 @@ import org.json.JSONObject
                 }
             }
         } else {
-            BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-                val coverSize = minOf(maxWidth, maxHeight - 40.dp).coerceAtLeast(60.dp)
-                Column(Modifier.width(coverSize).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Box(Modifier.size(coverSize).alpha(if (available) 1f else .45f).tvFocus(focused, TvShape.card)) {
-                        SongArtwork(app, song, Modifier.fillMaxSize(), shape = TvShape.card)
+            val coverShape = RoundedCornerShape(14.dp)
+            BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
+                val coverSize = minOf(maxWidth, maxHeight - 46.dp).coerceAtLeast(60.dp)
+                Column(Modifier.fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(Modifier.size(coverSize).alpha(if (available) 1f else .45f).tvFocus(focused, coverShape)) {
+                        SongArtwork(app, song, Modifier.fillMaxSize(), shape = coverShape)
                         if (isPlaying) HomePlayingBadge(app.playing, Modifier.align(Alignment.BottomStart).padding(6.dp))
                     }
                     HomeFavoriteText(song, available, landscape = false, modifier = Modifier.fillMaxWidth())
@@ -267,16 +268,16 @@ import org.json.JSONObject
 @Composable private fun HomeShelfCoverTile(app: TvApp, song: JSONObject, focusKey: String, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
     val available = song.optBoolean("available", true)
-    val coverShape = RoundedCornerShape(12.dp)
+    val coverShape = RoundedCornerShape(11.dp)
     Button(
         onClick = { app.openSong(song) },
         enabled = available,
         modifier = modifier
             .tvFocusTarget(focusKey)
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused && available, scaleTarget = 1.04f, liftDp = 1.dp),
+            .tvSpringFocus(focused && available, scaleTarget = 1.055f, liftDp = 1.5.dp),
         scale = ButtonDefaults.scale(focusedScale = 1f),
-        contentPadding = PaddingValues(2.dp),
+        contentPadding = PaddingValues(3.dp),
         shape = ButtonDefaults.shape(coverShape),
         colors = ButtonDefaults.colors(
             containerColor = Color.Transparent,
@@ -288,8 +289,8 @@ import org.json.JSONObject
         ),
     ) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val coverSize = minOf(maxWidth, maxHeight - 36.dp).coerceAtLeast(48.dp)
-            Column(Modifier.width(coverSize).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            val coverSize = minOf(maxWidth, maxHeight - 38.dp).coerceAtLeast(48.dp)
+            Column(Modifier.fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Box(Modifier.size(coverSize).alpha(if (available) 1f else .45f).tvFocus(focused, coverShape)) {
                     SongArtwork(app, song, Modifier.fillMaxSize(), shape = coverShape)
                 }
@@ -297,8 +298,8 @@ import org.json.JSONObject
                     Text(
                         song.optString("title"),
                         color = if (available) Paper else Muted,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
+                        fontSize = 11.5.sp,
+                        lineHeight = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -490,13 +491,13 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
         modifier = modifier
             .tvFocusTarget("phone")
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.032f)
+            .tvSpringFocus(focused, scaleTarget = 1.04f, liftDp = 1.5.dp)
             .glassSurface(
                 shape,
                 highlighted = focused,
-                base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat,
-                elevation = if (focused) 6.dp else 3.dp,
-                backdropBlur = true,
+                base = if (focused) Glass.surfaceFocus else Glass.surfaceCard,
+                elevation = if (focused) 8.dp else 4.dp,
+                backdropBlur = false,
             )
             .tvFocus(focused, shape),
         contentPadding = PaddingValues(0.dp),
@@ -540,36 +541,28 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
 @Composable internal fun TvNavigation(label: String, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = GlassShape.pill
-    val container by animateColorAsState(
-        targetValue = when {
-            focused -> Glass.surfaceFocus
-            selected -> Glass.surfaceSelected
-            else -> Color.Transparent
-        },
-        animationSpec = tween(180),
-        label = "navPillBg",
-    )
     Button(
         onClick,
         modifier
             .height(32.dp)
             .semantics { this.selected = selected; stateDescription = if (selected) "当前页面" else "" }
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.035f, liftDp = 0.5.dp)
+            .tvSpringFocus(focused, scaleTarget = 1.045f, liftDp = 0.5.dp)
             .then(
-                if (selected && !focused) Modifier
-                    .glassSurface(shape, highlighted = false, intensity = 0.75f, base = Glass.surfaceSelected, elevation = 0.dp)
-                else Modifier
-            )
-            .tvFocus(focused, shape),
+                when {
+                    focused -> Modifier.tvPlatinumFocus(true, shape)
+                    selected -> Modifier.clip(shape).background(Glass.surfaceSelected)
+                    else -> Modifier
+                }
+            ),
         contentPadding = PaddingValues(horizontal = 17.dp),
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(shape),
         colors = ButtonDefaults.colors(
-            containerColor = if (selected && !focused) Color.Transparent else container,
+            containerColor = Color.Transparent,
             contentColor = if (selected) Paper else Muted,
-            focusedContainerColor = Glass.surfaceFocus,
-            focusedContentColor = Paper,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = Glass.focusInk,
         ),
     ) {
         Text(
@@ -590,27 +583,28 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = GlassShape.pill
-    val textColor = if (primary) OnBrand else Paper
     Button(
         onClick,
         modifier
             .height(32.dp)
             .tvFocusTarget(focusKey)
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.035f, liftDp = 0.8.dp)
+            .tvSpringFocus(focused, scaleTarget = 1.04f, liftDp = 0.8.dp)
             .then(
-                if (primary) Modifier.brandGlassSurface(shape, focused = focused)
-                else Modifier.glassSurface(shape, highlighted = focused, base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat, elevation = if (focused) 5.dp else 2.dp)
-            )
-            .tvFocus(focused, shape),
+                when {
+                    primary -> Modifier.brandGlassSurface(shape, focused = focused).tvFocus(focused, shape)
+                    focused -> Modifier.tvPlatinumFocus(true, shape)
+                    else -> Modifier.glassSurface(shape, highlighted = false, base = Glass.surfaceFloat, elevation = 2.dp)
+                }
+            ),
         contentPadding = PaddingValues(horizontal = if (label in listOf("‹", "›")) 0.dp else 14.dp),
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(shape),
         colors = ButtonDefaults.colors(
             containerColor = Color.Transparent,
-            contentColor = textColor,
+            contentColor = if (primary) OnBrand else Paper,
             focusedContainerColor = Color.Transparent,
-            focusedContentColor = textColor,
+            focusedContentColor = if (primary) OnBrand else Glass.focusInk,
         ),
     ) {
         Text(label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -621,15 +615,15 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
     modifier: Modifier,
     shape: Shape = TvShape.control,
     onClick: () -> Unit,
-    content: @Composable RowScope.() -> Unit,
+    content: @Composable RowScope.(focused: Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     Button(
         onClick,
         modifier
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.032f)
-            .glassSurface(shape, highlighted = focused, base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat, elevation = if (focused) 6.dp else 3.dp, backdropBlur = true)
+            .tvSpringFocus(focused, scaleTarget = 1.045f, liftDp = 1.dp)
+            .glassSurface(shape, highlighted = focused, base = if (focused) Glass.surfaceFocus else Glass.surfaceCard, elevation = if (focused) 8.dp else 3.dp, backdropBlur = false)
             .tvFocus(focused, shape),
         contentPadding = PaddingValues(0.dp),
         scale = ButtonDefaults.scale(focusedScale = 1f),
@@ -640,7 +634,7 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
             focusedContainerColor = Color.Transparent,
             focusedContentColor = Paper,
         ),
-        content = content,
+        content = { content(focused) },
     )
 }
 

@@ -1,9 +1,7 @@
 package com.mynora.singverse.tv
 
 import android.graphics.Bitmap
-import android.graphics.RuntimeShader
 import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -35,10 +33,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -57,11 +58,10 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * OS-tiered glass capability strategy (single minSdk 21 APK):
- * - LIQUID  (Android 13+ / API 33+): Haze GPU backdrop blur + AGSL RuntimeShader SDF bevel refraction,
- *                                    specular crescents & subtle RGB chromatic edge dispersion
- * - FROSTED (Android 12  / API 31–32): Haze RenderEffect GPU backdrop blur + soft specular rim
- * - LEGACY  (Android 5–11 / API 21–30): Zero-blur dark translucent fallback for guaranteed 60fps
+ * OS-tiered surface strategy (single minSdk 21 APK):
+ * - LIQUID  (Android 13+ / API 33+): Restrained hardware backdrop frost on top/bottom chrome
+ * - FROSTED (Android 12  / API 31–32): Lightweight RenderEffect backdrop frost
+ * - LEGACY  (Android 5–11 / API 21–30): Zero-blur matte graphite surface for 60fps stability
  */
 internal enum class GlassTier {
     LIQUID,
@@ -69,7 +69,6 @@ internal enum class GlassTier {
     LEGACY;
 
     val supportsBackdropBlur: Boolean get() = this != LEGACY
-    val supportsAgslLiquid: Boolean get() = this == LIQUID
 
     companion object {
         val current: GlassTier = when {
@@ -90,156 +89,89 @@ internal fun Modifier.tvHazeSource(state: HazeState?): Modifier =
     if (GlassTier.current.supportsBackdropBlur && state != null) this.hazeSource(state) else this
 
 /**
- * AGSL RuntimeShader (Android 13+ / API 33+):
- * Computes exact rounded-box Signed Distance Field (SDF), surface bevel normal,
- * directional top-left/bottom-right studio specular crescents, subtle RGB chromatic
- * dispersion along the curved edge, and internal Fresnel glass lens luminance.
- */
-private const val LIQUID_GLASS_AGSL = """
-    uniform float2 uSize;
-    uniform float uRadius;
-    uniform float uHighlight;
-    uniform float uIntensity;
-
-    float sdRoundedBox(float2 p, float2 b, float r) {
-        float2 q = abs(p) - b + float2(r);
-        return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
-    }
-
-    half4 main(float2 fragCoord) {
-        float2 halfSize = max(uSize * 0.5, float2(1.0));
-        float r = clamp(uRadius, 2.0, min(halfSize.x, halfSize.y));
-        float2 p = fragCoord - halfSize;
-
-        float d = sdRoundedBox(p, halfSize, r);
-        if (d > 0.5) {
-            return half4(0.0);
-        }
-
-        // Analytical gradient of the SDF gives the curved glass bevel normal
-        float eps = 1.0;
-        float gx = sdRoundedBox(p + float2(eps, 0.0), halfSize, r) - sdRoundedBox(p - float2(eps, 0.0), halfSize, r);
-        float gy = sdRoundedBox(p + float2(0.0, eps), halfSize, r) - sdRoundedBox(p - float2(0.0, eps), halfSize, r);
-        float2 n2 = normalize(float2(gx, gy) + float2(1e-5));
-
-        float distIn = max(-d, 0.0);
-
-        // 1) Curved glass bevel band (inner 0..14px) with 3D Fresnel luminance
-        float bevelBand = exp(-distIn * 0.22);
-        float rimSharp = exp(-distIn * 1.15);
-
-        // 2) Dual directional studio lights (top-left primary + soft bottom-right bounce)
-        float2 light1 = normalize(float2(-0.62, -0.78));
-        float2 light2 = normalize(float2(0.58, 0.81));
-        float spec1 = pow(clamp(dot(n2, light1) * 0.5 + 0.5, 0.0, 1.0), 3.0);
-        float spec2 = pow(clamp(dot(n2, light2) * 0.5 + 0.5, 0.0, 1.0), 3.6);
-
-        // 3) Subtle optical RGB chromatic dispersion along the curved bevel
-        float dispBand = exp(-abs(distIn - 2.2) * 0.65);
-        float3 dispersion = float3(
-            0.09 * spec1 * dispBand,
-            0.03 * (spec1 + spec2) * dispBand,
-            0.11 * spec2 * dispBand
-        );
-
-        // 4) Soft top skylight caustic wash across the upper curved glass
-        float topWash = clamp(1.0 - (fragCoord.y / max(uSize.y * 0.36, 1.0)), 0.0, 1.0);
-        topWash = topWash * topWash * (0.08 + 0.06 * uHighlight);
-
-        // 5) Combine optical specular rim + inner bevel lens + chromatic edge
-        float boost = mix(1.0, 1.45, uHighlight) * uIntensity;
-        float rimEnergy = (0.34 * spec1 + 0.22 * spec2 + 0.06) * rimSharp * boost;
-        float bevelEnergy = (0.14 * spec1 + 0.09 * spec2) * bevelBand * boost;
-
-        float3 rgb = float3(0.95, 0.97, 1.0) * (rimEnergy + bevelEnergy + topWash) + dispersion * boost;
-        float alpha = clamp(rimEnergy * 1.15 + bevelEnergy * 0.95 + topWash + length(dispersion) * 0.6, 0.0, 0.62);
-        return half4(rgb * alpha, alpha);
-    }
-"""
-
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private fun buildLiquidGlassShaderBrush(
-    width: Float,
-    height: Float,
-    radiusPx: Float,
-    highlighted: Boolean,
-    intensity: Float,
-): ShaderBrush {
-    val shader = RuntimeShader(LIQUID_GLASS_AGSL)
-    shader.setFloatUniform("uSize", width.coerceAtLeast(2f), height.coerceAtLeast(2f))
-    shader.setFloatUniform("uRadius", radiusPx)
-    shader.setFloatUniform("uHighlight", if (highlighted) 1f else 0f)
-    shader.setFloatUniform("uIntensity", intensity.coerceIn(0f, 1f))
-    return ShaderBrush(shader)
-}
-
-/**
- * SingVerse TV · Dark Liquid Glass design system (graphite canvas, tvOS-style focus).
+ * SingVerse TV · Luxury Hi-Fi Obsidian & Champagne Gold Design System.
+ *
+ * Inspired by Bang & Olufsen anodized hardware and Apple Music's quiet content-first
+ * showcase: obsidian black & deep graphite space, restrained champagne gold accents,
+ * and unified matte-graphite surfaces. Less effects, more quality.
  */
 internal object Glass {
-    // Coral accent: progress, primary actions, meaningful states
-    val brand = Color(0xFFFF566B)
-    val brandVivid = Color(0xFFFF566B)
-    val brandCoral = Color(0xFFFF7A8A)
-    val brandSoft = Color(0x28FF566B)
-    val brandFocus = Color(0xFFF04359)
+    // Anodized Platinum & Frost Silver accent (crisp Apple TV / Hi-Fi monochrome — zero yellow/brown cast)
+    val champagneGold = Color(0xFFDCE4F0)
+    val champagneBright = Color(0xFFF4F7FC)
+    val champagneSoft = Color(0x18FFFFFF)
+    val champagneRim = Color(0xB8FFFFFF)
+
+    // Apple TV Illuminated Focus Surface (luminous platinum-white pill + deep obsidian ink)
+    val focusFill = Color(0xFFF3F6FA)
+    val focusFillBottom = Color(0xFFE4E9F2)
+    val focusInk = Color(0xFF0C0F14)
+    val focusInkMuted = Color(0xFF4B5260)
+
+    // Refined crimson-coral for playback progress & primary play CTA
+    val brand = Color(0xFFE85668)
+    val brandVivid = Color(0xFFE85668)
+    val brandCoral = Color(0xFFF27382)
+    val brandSoft = Color(0x24E85668)
+    val brandFocus = Color(0xFFD94456)
     val onBrand = Color(0xFFFFFFFF)
 
-    val brandBlue = Color(0xFF5EA8FF)
-    val cyan = Color(0xFF5EA8FF)
-    val amber = Color(0xFFFFA95C)
-    val violet = Color(0xFFA78BFA)
-    val champagne = Color(0xFF8E95A5)
+    val brandBlue = Color(0xFF6BA6E8)
+    val cyan = Color(0xFF6BA6E8)
+    val amber = Color(0xFFDCE4F0)
+    val violet = Color(0xFFA08BE0)
+    val champagne = Color(0xFF8C919C)
 
-    // Graphite canvas & ink (readable from sofa distance)
-    val canvas = Color(0xFF0B0D11)
-    val canvasWarm = Color(0xFF0E1015)
-    val canvasGlacier = Color(0xFF0A0C11)
-    val canvasDeep = Color(0xFF07080B)
-    val canvasElevated = Color(0xFF141820)
-    val inkPrimary = Color(0xFFF5F5F7)
-    val inkSecondary = Color(0xFFA4AAB8)
-    val inkTertiary = Color(0xFF767C8B)
+    // Obsidian black & deep graphite gray spatial palette (zero brown/olive cast)
+    val canvas = Color(0xFF0A0B0E)
+    val canvasCenter = Color(0xFF13151B)
+    val canvasWarm = Color(0xFF0C0D11)
+    val canvasGlacier = Color(0xFF090A0D)
+    val canvasDeep = Color(0xFF050608)
+    val canvasElevated = Color(0xFF161920)
+    val inkPrimary = Color(0xFFF3F4F6)
+    val inkSecondary = Color(0xFF989DA8)
+    val inkTertiary = Color(0xFF6B707B)
 
-    // Smoke-black Liquid Glass hierarchy (translucent enough to let blurred cover art glow through)
-    val surface = Color(0x70161A22)
-    val surfaceStrong = Color(0x9E1E232E)
-    val surfaceHover = Color(0xB4262C3A)
-    val surfaceFloat = Color(0x7A161B24)    // Floating Liquid Glass chrome (real Haze blur underneath)
-    val surfaceCard = Color(0x72141820)     // Calm dark card / list row base
-    val cardSurface = Color(0x80161A22)
-    val surfaceFocus = Color(0xB8262E3D)    // Focused smoked glass
-    val surfaceSelected = Color(0x2AFFFFFF) // Active inner lens
-    val surfaceSheet = Color(0xDC161A22)    // Toast / sheet
-    val surfaceDialog = Color(0xF0151922)   // Thick, readable modal panel
-    val mediaSafe = Color(0xC80D1016)       // Independent dark scrim over MV video
-    val mediaScrim = Color(0xD40A0C11)      // Subtitle pill over MV video
+    // Unified matte-graphite & subtle smoked surfaces
+    val surface = Color(0xCC14171D)
+    val surfaceStrong = Color(0xDC1A1E26)
+    val surfaceHover = Color(0xE6212630)
+    val surfaceFloat = Color(0xCC15181F)    // Top nav, bottom bar, QR panel, search pill
+    val surfaceCard = Color(0xC413161C)     // Matte graphite cards & list rows
+    val cardSurface = Color(0xCC15181F)
+    val surfaceFocus = Color(0xEB222731)    // Elevated focused graphite
+    val surfaceSelected = Color(0x1CFFFFFF) // Crisp frosted platinum active tint
+    val surfaceSheet = Color(0xEB15181F)    // Toast / sheet
+    val surfaceDialog = Color(0xF514171E)   // Solid-feeling dark graphite modal
+    val mediaSafe = Color(0xD40B0D12)       // Independent dark scrim over MV video
+    val mediaScrim = Color(0xDC08090C)      // Subtitle pill over MV video
 
-    // Subtle hairline rims & tvOS silver-white focus ring
-    val rimLight = Color(0x2EFFFFFF)
-    val rimCool = Color(0x16FFFFFF)
-    val focusRing = Color(0xF5F5F7FA)
-    val edgeBottom = Color(0x14FFFFFF)
-    val shadowAmbient = Color(0x4C000000)
-    val shadowSpot = Color(0x6E000000)
-    val shadowFocus = Color(0x46FFFFFF)
+    // Subtle metallic hairlines & crisp pure-white specular focus ring
+    val rimLight = Color(0x1EFFFFFF)
+    val rimCool = Color(0x10FFFFFF)
+    val focusRing = Color(0xF5FFFFFF)       // Crisp frosted-white specular edge
+    val edgeBottom = Color(0x12FFFFFF)
+    val shadowAmbient = Color(0x52000000)
+    val shadowSpot = Color(0x78000000)
+    val shadowFocus = Color(0x88000000)
 
-    val ambientTop = Color(0xFF0E1015)
-    val ambientBottom = Color(0xFF0A0C11)
+    val ambientTop = Color(0xFF14161C)
+    val ambientBottom = Color(0xFF08090C)
 }
 
 internal object GlassShape {
     val pill = RoundedCornerShape(percent = 50)
     val control = RoundedCornerShape(12.dp)
     val row = RoundedCornerShape(14.dp)
-    val card = RoundedCornerShape(18.dp)
-    val panel = RoundedCornerShape(22.dp)
-    val dialog = RoundedCornerShape(26.dp)
+    val card = RoundedCornerShape(16.dp)
+    val panel = RoundedCornerShape(20.dp)
+    val dialog = RoundedCornerShape(24.dp)
 }
 
 internal object TvMotion {
-    val focusSpring = spring<Float>(dampingRatio = 0.82f, stiffness = 500f)
-    val subtleSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 480f)
+    val focusSpring = spring<Float>(dampingRatio = 0.82f, stiffness = 460f)
+    val subtleSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 460f)
     val dialogSpring = spring<Float>(dampingRatio = 0.84f, stiffness = 380f)
     const val pageTransitionMs = 200
     const val ambientCrossfadeMs = 1100
@@ -253,18 +185,11 @@ private fun Outline.toPath(): Path = Path().apply {
     }
 }
 
-private fun Outline.approxCornerRadiusPx(height: Float): Float = when (this) {
-    is Outline.Rounded -> roundRect.topLeftCornerRadius.x.coerceAtLeast(2f)
-    is Outline.Rectangle -> 2f
-    is Outline.Generic -> (height * 0.5f).coerceAtLeast(2f)
-}
-
 /**
- * Tiered Dark Liquid Glass surface:
- * - Android 13+ (`backdropBlur = true`): Haze GPU backdrop blur (26dp) + AGSL RuntimeShader
- *   curved bevel specular highlights & RGB chromatic edge dispersion.
- * - Android 12  (`backdropBlur = true`): Haze RenderEffect GPU backdrop blur (18dp) + crisp rim.
- * - Android 5–11 (or `backdropBlur = false`): Zero-blur dark translucent fallback.
+ * Unified Hi-Fi Matte-Graphite & Restrained Frosted Surface:
+ * - Clean deep-graphite body with subtle top-edge anodized catchlight and 0.75dp low-opacity rim.
+ * - Optional restrained Haze frost (`backdropBlur = true`) on floating top/bottom bars on Android 12+.
+ * - Zero heavy blur, zero loud borders, zero plastic glare.
  */
 internal fun Modifier.glassSurface(
     shape: Shape,
@@ -279,9 +204,8 @@ internal fun Modifier.glassSurface(
     val tier = GlassTier.current
     val hazeState = if (backdropBlur && tier.supportsBackdropBlur) LocalTvHazeState.current else null
     val useRealBlur = hazeState != null
-    val useAgsl = backdropBlur && tier.supportsAgslLiquid && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     val c = intensity.coerceIn(0f, 1f)
-    val clampedElevation = elevation.coerceAtMost(8.dp)
+    val clampedElevation = elevation.coerceAtMost(10.dp)
 
     val rawBase = base ?: Glass.surfaceFloat
     val elevated = if (clampedElevation > 0.dp) {
@@ -295,16 +219,13 @@ internal fun Modifier.glassSurface(
     } else this
 
     val withBackdrop = if (useRealBlur) {
-        val blurRadius = if (tier == GlassTier.LIQUID) 26.dp else 18.dp
-        val noise = if (tier == GlassTier.LIQUID) 0.06f else 0.04f
-        // Keep tint light enough that the blurred cover art & ambient glow visibly refract through
-        val blurTintAlpha = (rawBase.alpha * (if (highlighted) 0.62f else 0.50f)).coerceIn(0.22f, 0.64f)
+        val blurRadius = if (tier == GlassTier.LIQUID) 16.dp else 12.dp
         val style = remember(tier, rawBase, highlighted) {
             HazeStyle(
                 backgroundColor = Glass.canvas,
-                tint = HazeTint(rawBase.copy(alpha = blurTintAlpha)),
+                tint = HazeTint(rawBase.copy(alpha = (rawBase.alpha * 0.88f).coerceIn(0.68f, 0.90f))),
                 blurRadius = blurRadius,
-                noiseFactor = noise,
+                noiseFactor = 0.03f,
             )
         }
         elevated.clip(shape).hazeEffect(state = hazeState, style = style)
@@ -314,36 +235,26 @@ internal fun Modifier.glassSurface(
         val outline = shape.createOutline(size, layoutDirection, this)
         val clip = outline.toPath()
 
-        val fallbackAlpha = if (tier == GlassTier.LEGACY) {
-            (rawBase.alpha + 0.16f).coerceAtMost(0.96f)
-        } else rawBase.alpha
-        val body = rawBase.copy(alpha = (fallbackAlpha * (0.72f + 0.28f * c)).coerceIn(0f, 1f))
+        val bodyAlpha = if (tier == GlassTier.LEGACY) (rawBase.alpha + 0.08f).coerceAtMost(0.96f) else rawBase.alpha
+        val body = rawBase.copy(alpha = (bodyAlpha * (0.78f + 0.22f * c)).coerceIn(0f, 1f))
 
-        val agslBrush = if (useAgsl && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            runCatching {
-                buildLiquidGlassShaderBrush(
-                    width = size.width,
-                    height = size.height,
-                    radiusPx = outline.approxCornerRadiusPx(size.height),
-                    highlighted = highlighted,
-                    intensity = c,
-                )
-            }.getOrNull()
-        } else null
-
-        val topReflection = Brush.verticalGradient(
+        // Subtle vertical matte-graphite sheen (anodized aluminum feel, never glossy plastic)
+        val topSheen = Brush.verticalGradient(
             colorStops = arrayOf(
-                0f to Color.White.copy(alpha = (if (highlighted) 0.12f else 0.07f) * c),
-                0.26f to Color.Transparent,
+                0f to Color.White.copy(alpha = (if (highlighted) 0.075f else 0.045f) * c),
+                0.22f to Color.Transparent,
+                1f to Color.Black.copy(alpha = 0.08f * c),
             ),
             endY = size.height.coerceAtLeast(1f),
         )
 
+        // Delicate low-opacity hairline rim (crisp silver sheen when highlighted)
+        val rimTopColor = if (highlighted) Color.White.copy(alpha = 0.28f * c) else Color.White.copy(alpha = 0.14f * c)
         val rimBrush = Brush.linearGradient(
             colorStops = arrayOf(
-                0f to Color.White.copy(alpha = (if (highlighted) 0.28f else 0.18f) * c),
-                0.48f to Color.White.copy(alpha = 0.05f * c),
-                1f to Color.White.copy(alpha = (if (highlighted) 0.18f else 0.11f) * c),
+                0f to rimTopColor,
+                0.5f to Color.White.copy(alpha = 0.05f * c),
+                1f to Color.White.copy(alpha = (if (highlighted) 0.14f else 0.08f) * c),
             ),
             start = Offset.Zero,
             end = Offset(size.width, size.height),
@@ -353,7 +264,7 @@ internal fun Modifier.glassSurface(
             Brush.linearGradient(
                 colors = listOf(
                     accent.copy(alpha = (accent.alpha * c).coerceIn(0f, 1f)),
-                    accent.copy(alpha = (accent.alpha * 0.4f * c).coerceIn(0f, 1f)),
+                    accent.copy(alpha = (accent.alpha * 0.35f * c).coerceIn(0f, 1f)),
                 ),
                 start = Offset.Zero,
                 end = Offset(size.width, size.height),
@@ -365,41 +276,40 @@ internal fun Modifier.glassSurface(
             clipPath(clip) {
                 if (!useRealBlur) drawOutline(outline, body)
                 if (accentBrush != null) drawOutline(outline, accentBrush)
-                if (agslBrush != null) drawOutline(outline, agslBrush)
-                else drawOutline(outline, topReflection)
+                drawOutline(outline, topSheen)
             }
-            if (strokePx > 0f && agslBrush == null) {
+            if (strokePx > 0f) {
                 drawOutline(outline, rimBrush, style = Stroke(width = strokePx))
             }
         }
     }
 }
 
-/** Coral primary action fill. */
+/** Refined crimson-coral primary CTA fill. */
 internal fun Modifier.brandGlassSurface(
     shape: Shape,
     focused: Boolean = false,
 ): Modifier = shadow(
     elevation = if (focused) 8.dp else 3.dp,
     shape = shape,
-    ambientColor = Glass.brand.copy(alpha = 0.28f),
-    spotColor = Glass.brand.copy(alpha = 0.36f),
+    ambientColor = Glass.brand.copy(alpha = 0.24f),
+    spotColor = Glass.brand.copy(alpha = 0.34f),
     clip = false,
 ).drawWithCache {
     val outline = shape.createOutline(size, layoutDirection, this)
     val start = if (focused) Glass.brandFocus else Glass.brandVivid
-    val end = if (focused) Color(0xFFFF6E80) else Glass.brandCoral
+    val end = if (focused) Color(0xFFF06A7A) else Glass.brandCoral
     val fillBrush = Brush.linearGradient(
         colors = listOf(start, end),
         start = Offset.Zero,
         end = Offset(size.width, size.height),
     )
     val topSheen = Brush.verticalGradient(
-        colorStops = arrayOf(0f to Color(0x28FFFFFF), 0.30f to Color.Transparent),
+        colorStops = arrayOf(0f to Color(0x22FFFFFF), 0.28f to Color.Transparent),
         endY = size.height.coerceAtLeast(1f),
     )
     val rimBrush = Brush.linearGradient(
-        colorStops = arrayOf(0f to Color(0x52FFFFFF), 0.5f to Color(0x14FFFFFF), 1f to Color(0x32FFFFFF)),
+        colorStops = arrayOf(0f to Color(0x42FFFFFF), 0.5f to Color(0x10FFFFFF), 1f to Color(0x28FFFFFF)),
         start = Offset.Zero,
         end = Offset(size.width, size.height),
     )
@@ -411,11 +321,11 @@ internal fun Modifier.brandGlassSurface(
     }
 }
 
-/** Short, crisp tvOS-style focus scale + lift on the GPU layer. */
+/** Smooth Apple TV / Hi-Fi focus scale + lift on GPU graphicsLayer (zero layout jitter). */
 internal fun Modifier.tvSpringFocus(
     focused: Boolean,
-    scaleTarget: Float = 1.028f,
-    liftDp: Dp = 1.dp,
+    scaleTarget: Float = 1.04f,
+    liftDp: Dp = 1.5.dp,
 ): Modifier = composed {
     val scale by animateFloatAsState(
         targetValue = if (focused) scaleTarget else 1f,
@@ -468,9 +378,25 @@ internal fun Modifier.tvDialogEnter(): Modifier = composed {
     }
 }
 
-// Low-saturation dark ambient tint helpers (cover colors tinted down for graphite canvas)
+// One-time cached 64x64 fine monochrome dither grain to eliminate 8-bit gradient banding on TVs
+private val subtleGrainTile: ImageBitmap by lazy {
+    val size = 64
+    val pixels = IntArray(size * size)
+    var seed = 0x51A7F31D
+    for (i in pixels.indices) {
+        seed = seed * 1664525 + 1013904223
+        val v = (seed ushr 24) and 0xFF
+        // Ultra-subtle ~2.5% alpha monochrome micro-grain
+        val alpha = if (v > 128) 6 else 3
+        val gray = if (v > 128) 255 else 0
+        pixels[i] = (alpha shl 24) or (gray shl 16) or (gray shl 8) or gray
+    }
+    Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+// Low-saturation dark ambient tint helpers (used for AudioPlayerScene cover mood only)
 private fun darkAmbient(hue: Float, sat: Float, value: Float): Color =
-    Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat.coerceIn(0.32f, 0.54f), value.coerceIn(0.28f, 0.48f))))
+    Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat.coerceIn(0.20f, 0.38f), value.coerceIn(0.20f, 0.34f))))
 
 private val ambientCache = object : LinkedHashMap<String, Pair<Color, Color>>(32, 0.75f, true) {
     override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Color, Color>>?) = size > 48
@@ -511,20 +437,22 @@ internal fun extractAmbientColors(bitmap: Bitmap?): Pair<Color, Color>? {
     val avg = android.graphics.Color.rgb((rSum / count).toInt(), (gSum / count).toInt(), (bSum / count).toInt())
     val primaryInt = if (maxSat > 0.18f) vibrant else avg
     android.graphics.Color.colorToHSV(primaryInt, hsv)
-    return darkAmbient(hsv[0], hsv[1], 0.44f) to darkAmbient((hsv[0] + 42f) % 360f, hsv[1] * 0.85f, 0.38f)
+    return darkAmbient(hsv[0], hsv[1], 0.32f) to darkAmbient((hsv[0] + 36f) % 360f, hsv[1] * 0.75f, 0.26f)
 }
 
 internal fun fallbackAmbientColors(seed: String): Pair<Color, Color> {
-    val hues = listOf(350f to 215f, 215f to 265f, 20f to 335f, 165f to 215f, 270f to 340f, 38f to 215f)
-    if (seed.isBlank()) return darkAmbient(350f, 0.38f, 0.40f) to darkAmbient(215f, 0.40f, 0.36f)
+    val hues = listOf(220f to 240f, 210f to 235f, 345f to 220f, 195f to 225f, 255f to 220f, 38f to 220f)
+    if (seed.isBlank()) return darkAmbient(220f, 0.22f, 0.26f) to darkAmbient(235f, 0.20f, 0.22f)
     val (a, b) = hues[(seed.hashCode() ushr 1) % hues.size]
-    return darkAmbient(a, 0.38f, 0.40f) to darkAmbient(b, 0.40f, 0.36f)
+    return darkAmbient(a, 0.22f, 0.26f) to darkAmbient(b, 0.20f, 0.22f)
 }
 
 /**
- * Graphite stage with live atmospheric cover art backdrop:
- * Gives Haze & AGSL Liquid Glass genuine luminous color depth to refract behind floating bars,
- * while a dark graphite vignette guarantees sofa-distance text contrast.
+ * Luxury Hi-Fi Obsidian & Deep Graphite Spatial Backdrop:
+ * - Layered low-contrast obsidian/graphite radial gradients for architectural depth (zero brown/olive wash)
+ * - Whisper of champagne-gold studio ambient light near upper-center
+ * - Soft perimeter vignette framing the center album artwork
+ * - Cached fine micro-grain tile preventing 8-bit gradient banding on 1080p/4K TV panels
  */
 @Composable
 internal fun AmbientStage(
@@ -535,8 +463,8 @@ internal fun AmbientStage(
     animateDrift: Boolean = false,
     backdropBitmap: Bitmap? = null,
 ) {
-    val targetPrimary = primaryGlow ?: darkAmbient(350f, 0.38f, 0.40f)
-    val targetSecondary = secondaryGlow ?: darkAmbient(212f, 0.42f, 0.38f)
+    val targetPrimary = primaryGlow ?: Color(0xFF1E222B)
+    val targetSecondary = secondaryGlow ?: Color(0xFF151820)
     val animatedPrimary by animateColorAsState(
         targetValue = targetPrimary,
         animationSpec = tween(TvMotion.ambientCrossfadeMs, easing = FastOutSlowInEasing),
@@ -552,17 +480,18 @@ internal fun AmbientStage(
         transition.animateFloat(
             initialValue = 0f,
             targetValue = (2f * PI).toFloat(),
-            animationSpec = infiniteRepeatable(tween(32000, easing = LinearEasing), RepeatMode.Restart),
+            animationSpec = infiniteRepeatable(tween(36000, easing = LinearEasing), RepeatMode.Restart),
             label = "ambientPhase",
         ).value
     } else 0f
-    val glowAlpha = if (accent) 0.56f else 0.36f
     val tier = GlassTier.current
+    val grainBrush = remember { ShaderBrush(ImageShader(subtleGrainTile, TileMode.Repeated, TileMode.Repeated)) }
 
     Box(modifier.fillMaxSize().background(Glass.canvas)) {
+        // Optional subtle cover-art mood ONLY when explicitly provided (e.g. full-screen Audio Player)
         if (backdropBitmap != null) {
             val imageModifier = if (tier.supportsBackdropBlur) {
-                Modifier.fillMaxSize().blur(46.dp)
+                Modifier.fillMaxSize().blur(52.dp)
             } else {
                 Modifier.fillMaxSize()
             }
@@ -570,53 +499,79 @@ internal fun AmbientStage(
                 bitmap = backdropBitmap.asImageBitmap(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                alpha = if (accent) 0.44f else 0.32f,
+                alpha = 0.28f,
                 modifier = imageModifier,
             )
-            // Dark graphite veil preserving high text contrast while letting cover color glow through glass
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0f to Color(0x9C0B0D11),
-                                0.45f to Color(0xB80B0D11),
-                                1f to Color(0xD20B0D11),
-                            )
-                        )
-                    )
-            )
+            Box(Modifier.fillMaxSize().background(Color(0xC20A0B0E)))
         }
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val dx1 = if (animateDrift) cos(phase) * w * 0.025f else 0f
-            val dy1 = if (animateDrift) sin(phase) * h * 0.025f else 0f
-            val dx2 = if (animateDrift) sin(phase * 0.8f) * w * 0.025f else 0f
-            val dy2 = if (animateDrift) cos(phase * 0.8f) * h * 0.025f else 0f
+            val dx = if (animateDrift) cos(phase) * w * 0.018f else 0f
+            val dy = if (animateDrift) sin(phase) * h * 0.018f else 0f
 
-            val c1 = Offset(w * 0.16f + dx1, h * 0.10f + dy1)
-            val r1 = h * 0.90f
+            // 1) Central deep-graphite architectural showcase glow (creates spatial depth on obsidian)
+            val centerLight = Offset(w * 0.44f + dx, h * 0.26f + dy)
+            val centerRadius = maxOf(w, h) * 0.68f
             drawCircle(
-                brush = Brush.radialGradient(listOf(animatedPrimary.copy(alpha = glowAlpha), Color.Transparent), center = c1, radius = r1),
-                radius = r1,
-                center = c1,
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to (if (accent) animatedPrimary.copy(alpha = 0.48f) else Color(0xFF191D26).copy(alpha = 0.68f)),
+                        0.55f to (if (accent) animatedSecondary.copy(alpha = 0.22f) else Color(0xFF111319).copy(alpha = 0.35f)),
+                        1f to Color.Transparent,
+                    ),
+                    center = centerLight,
+                    radius = centerRadius,
+                ),
+                radius = centerRadius,
+                center = centerLight,
             )
-            val c2 = Offset(w * 0.86f + dx2, h * 0.24f + dy2)
-            val r2 = h * 0.92f
+
+            // 2) Whisper of cool starlight studio ambient light (crisp neutral depth)
+            val lightPos = Offset(w * 0.24f - dx, h * 0.08f)
+            val lightRadius = h * 0.78f
             drawCircle(
-                brush = Brush.radialGradient(listOf(animatedSecondary.copy(alpha = glowAlpha), Color.Transparent), center = c2, radius = r2),
-                radius = r2,
-                center = c2,
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to Color(0xFFAEC5E5).copy(alpha = if (accent) 0.055f else 0.036f),
+                        0.48f to Color(0xFFAEC5E5).copy(alpha = if (accent) 0.018f else 0.012f),
+                        1f to Color.Transparent,
+                    ),
+                    center = lightPos,
+                    radius = lightRadius,
+                ),
+                radius = lightRadius,
+                center = lightPos,
             )
-            val c3 = Offset(w * 0.50f, h * 0.95f)
-            val r3 = h * 0.68f
+
+            // 3) Cool slate secondary depth on right (keeps QR & right column crisp, zero brown tint)
+            val rightPos = Offset(w * 0.88f + dx, h * 0.32f)
+            val rightRadius = h * 0.85f
             drawCircle(
-                brush = Brush.radialGradient(listOf(animatedSecondary.copy(alpha = glowAlpha * 0.80f), Color.Transparent), center = c3, radius = r3),
-                radius = r3,
-                center = c3,
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF1A202C).copy(alpha = 0.42f), Color.Transparent),
+                    center = rightPos,
+                    radius = rightRadius,
+                ),
+                radius = rightRadius,
+                center = rightPos,
             )
+
+            // 4) Perimeter vignette darkening edges & corners to frame the album covers
+            drawRect(
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0.42f to Color.Transparent,
+                        0.82f to Color(0x52050608),
+                        1f to Color(0xA6050608),
+                    ),
+                    center = Offset(w * 0.50f, h * 0.48f),
+                    radius = maxOf(w, h) * 0.72f,
+                )
+            )
+
+            // 5) Ultra-fine cached micro-grain to prevent 8-bit gradient banding on TV screens
+            drawRect(brush = grainBrush)
         }
     }
 }

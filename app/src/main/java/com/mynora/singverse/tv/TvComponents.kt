@@ -110,23 +110,59 @@ internal val LocalTvFocusPage = staticCompositionLocalOf { "default" }
 }
 
 /**
- * V2 Apple TV Remote Focus Halo:
- * Clearly separates remote focus from active/selected states using a crisp brand-blue
- * outer ring (#1688F8) paired with a delicate inner white specular highlight.
+ * Apple TV Specular Rim Focus:
+ * Crisp pure-white top-to-bottom specular gradient rim + subtle diffused white aura.
+ * Used on album covers, colorful primary CTAs, and rich cards (zero heavy colored outline).
  */
 internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control): Modifier {
     if (!focused) return this
     return this.drawWithCache {
         val outline = shape.createOutline(size, layoutDirection, this)
-        val ringPx = 2.dp.toPx()
-        val haloPx = 3.5.dp.toPx()
+        val ringPx = 1.5.dp.toPx()
+        val haloPx = 3.dp.toPx()
+        val rimBrush = Brush.verticalGradient(
+            colorStops = arrayOf(
+                0f to Color.White.copy(alpha = 0.96f),
+                0.5f to Color.White.copy(alpha = 0.80f),
+                1f to Color.White.copy(alpha = 0.62f),
+            ),
+            endY = size.height.coerceAtLeast(1f),
+        )
         onDrawWithContent {
             drawContent()
-            // tvOS-style silver-white hairline with a barely-there outer halo
-            drawOutline(outline, Color(0x2EFFFFFF), style = Stroke(width = haloPx))
-            drawOutline(outline, Glass.focusRing, style = Stroke(width = ringPx))
+            drawOutline(outline, Color.White.copy(alpha = 0.14f), style = Stroke(width = haloPx))
+            drawOutline(outline, rimBrush, style = Stroke(width = ringPx))
         }
     }
+}
+
+/**
+ * Apple TV Illuminated Platinum Focus:
+ * Neutral controls (nav pills, sidebar rows, option rows, buttons) illuminate into a
+ * luminous platinum-white pill with soft elevation shadow and deep obsidian ink — zero outline border.
+ */
+internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.control): Modifier {
+    if (!focused) return this
+    return this
+        .shadow(
+            elevation = 10.dp,
+            shape = shape,
+            ambientColor = Glass.shadowFocus,
+            spotColor = Glass.shadowFocus,
+            clip = false,
+        )
+        .drawWithCache {
+            val outline = shape.createOutline(size, layoutDirection, this)
+            val fillBrush = Brush.verticalGradient(
+                colors = listOf(Glass.focusFill, Glass.focusFillBottom),
+                endY = size.height.coerceAtLeast(1f),
+            )
+            val innerRim = Stroke(width = 0.75.dp.toPx())
+            onDrawBehind {
+                drawOutline(outline, fillBrush)
+                drawOutline(outline, Color.White.copy(alpha = 0.9f), style = innerRim)
+            }
+        }
 }
 
 @Composable internal fun SingVerseTvTheme(content: @Composable () -> Unit) {
@@ -157,6 +193,7 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
     danger: Boolean = false,
     quiet: Boolean = false,
     shape: Shape = TvShape.control,
+    fillWidth: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -169,21 +206,23 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
         danger -> Danger
         else -> Paper
     }
+    val usePlatinumFocus = enabled && !selected && !danger
     val surfaceModifier = when {
         !enabled -> Modifier.glassSurface(shape, intensity = 0.45f, base = Color(0x45181C24))
-        selected -> Modifier.brandGlassSurface(shape, focused = focused)
+        selected -> Modifier.brandGlassSurface(shape, focused = focused).tvFocus(focused, shape)
         danger -> Modifier.glassSurface(
             shape,
             highlighted = focused,
             base = if (focused) Color(0x38FF453A) else Color(0x20FF453A),
             elevation = if (focused) 4.dp else 0.dp,
-        )
-        quiet -> if (focused) Modifier.glassSurface(shape, highlighted = true, base = Glass.surfaceFocus, elevation = 4.dp) else Modifier
+        ).tvFocus(focused, shape)
+        focused && usePlatinumFocus -> Modifier.tvPlatinumFocus(true, shape)
+        quiet -> Modifier
         else -> Modifier.glassSurface(
             shape,
-            highlighted = focused,
-            base = if (focused) Glass.surfaceFocus else Glass.surfaceFloat,
-            elevation = if (focused) 5.dp else 0.dp,
+            highlighted = false,
+            base = Glass.surfaceFloat,
+            elevation = 0.dp,
         )
     }
     Button(
@@ -194,9 +233,8 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
             .heightIn(min = 34.dp)
             .tvFocusTarget("action:$focusKey")
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused && enabled, scaleTarget = if (pressed) 0.975f else 1.028f, liftDp = 0.8.dp)
-            .then(surfaceModifier)
-            .tvFocus(focused, shape),
+            .tvSpringFocus(focused && enabled, scaleTarget = if (pressed) 0.97f else 1.045f, liftDp = 1.dp)
+            .then(surfaceModifier),
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(shape),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -204,13 +242,19 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
             containerColor = Color.Transparent,
             contentColor = content,
             focusedContainerColor = Color.Transparent,
-            focusedContentColor = if (selected) OnBrand else if (danger) Danger else Paper,
+            focusedContentColor = when {
+                selected -> OnBrand
+                danger -> Danger
+                else -> Glass.focusInk
+            },
             disabledContainerColor = Color.Transparent,
             disabledContentColor = content,
         ),
     ) {
         Text(
             label,
+            modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier,
+            textAlign = if (fillWidth) androidx.compose.ui.text.style.TextAlign.Center else null,
             fontSize = textSize,
             lineHeight = textSize * 1.32f,
             fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
@@ -309,6 +353,7 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
 @Composable internal fun Input(value: String, hint: String, onChange: (String) -> Unit) {
     var editing by remember { mutableStateOf(false) }
     var restoreFocus by remember { mutableStateOf(false) }
+    var buttonFocused by remember { mutableStateOf(false) }
     var editorFocused by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val buttonFocus = remember { FocusRequester() }
@@ -324,18 +369,62 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
     }
     fun finishEditing() { restoreFocus = true; editing = false; keyboard?.hide() }
     BackHandler(editing) { finishEditing() }
-    if (!editing) Action(value.ifBlank { hint }, Modifier.fillMaxWidth().focusRequester(buttonFocus)) { editing = true }
-    else BasicTextField(
+    if (!editing) {
+        val shape = GlassShape.pill
+        Button(
+            onClick = { editing = true },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .focusRequester(buttonFocus)
+                .tvFocusTarget("action:$hint")
+                .onFocusChanged { buttonFocused = it.isFocused }
+                .tvSpringFocus(buttonFocused, scaleTarget = 1.015f, liftDp = 0.8.dp)
+                .glassSurface(
+                    shape,
+                    highlighted = buttonFocused,
+                    base = if (buttonFocused) Glass.surfaceFocus else Glass.surfaceCard,
+                    elevation = if (buttonFocused) 6.dp else 2.dp,
+                )
+                .tvFocus(buttonFocused, shape),
+            scale = ButtonDefaults.scale(focusedScale = 1f),
+            shape = ButtonDefaults.shape(shape),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+            colors = ButtonDefaults.colors(
+                containerColor = Color.Transparent,
+                contentColor = if (value.isBlank()) Muted else Paper,
+                focusedContainerColor = Color.Transparent,
+                focusedContentColor = Paper,
+            ),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                HomeGlyph("search", Modifier.size(14.dp), if (buttonFocused || value.isNotBlank()) Paper else Muted)
+                Text(
+                    value.ifBlank { hint },
+                    fontSize = 13.5.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = if (value.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    } else BasicTextField(
         value,
         onChange,
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 40.dp)
             .focusRequester(editorFocus)
             .tvFocusTarget("input:$hint")
             .onFocusChanged { editorFocused = it.isFocused }
             .glassSurface(GlassShape.pill, highlighted = editorFocused, base = Glass.surfaceFocus, elevation = 8.dp)
             .tvFocus(editorFocused, GlassShape.pill)
-            .padding(horizontal = 18.dp, vertical = 11.dp),
+            .padding(horizontal = 18.dp, vertical = 10.dp),
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { finishEditing() }),
@@ -366,10 +455,10 @@ internal fun Modifier.tvFocus(focused: Boolean, shape: Shape = TvShape.control):
     }
     Box(
         modifier
-            .shadow(elevation = 4.dp, shape = shape, ambientColor = Color(0x66000000), spotColor = Color(0x80000000), clip = false)
+            .shadow(elevation = 6.dp, shape = shape, ambientColor = Color(0x66000000), spotColor = Color(0x88000000), clip = false)
             .clip(shape)
             .background(Brush.linearGradient(listOf(c1, c2)))
-            .border(0.75.dp, Color(0x26FFFFFF), shape),
+            .border(0.5.dp, Color(0x16FFFFFF), shape),
     ) {
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), "歌曲封面", Modifier.fillMaxSize(), contentScale = contentScale)
         else MusicMark(Modifier.size(26.dp).align(Alignment.Center), tint = Paper.copy(alpha = 0.34f))
@@ -638,16 +727,21 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
         }
     }
     val shape = if (kind == "portrait") CircleShape else TvShape.panel
+    val fallbackBrush = if (kind == "portrait") {
+        Brush.verticalGradient(listOf(Color(0xFF282E3A), Color(0xFF171B24)))
+    } else {
+        Brush.linearGradient(listOf(c1, c2))
+    }
     Box(
         modifier
             .shadow(elevation = 6.dp, shape = shape, ambientColor = Glass.shadowAmbient, spotColor = Glass.shadowSpot, clip = false)
             .clip(shape)
-            .background(Brush.linearGradient(listOf(c1, c2)))
-            .border(1.dp, Color(0x2EFFFFFF), shape),
+            .background(fallbackBrush)
+            .border(1.dp, Color(0x22FFFFFF), shape),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), "${artist.optString("name")}${if (kind == "portrait") "头像" else if (derived) "由头像生成的背景" else "背景图"}", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-        else if (kind == "portrait") Text(artist.optString("name").take(1), color = Paper.copy(alpha = 0.72f), fontSize = 34.sp, lineHeight = 42.sp, fontWeight = FontWeight.SemiBold)
+        else if (kind == "portrait") Text(artist.optString("name").take(1).uppercase(), color = Paper.copy(alpha = 0.80f), fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold)
         if (derived) Box(Modifier.fillMaxSize().background(Color(0x660B0D11)))
         if (derived) Text(
             "头像生成背景",
@@ -691,49 +785,104 @@ internal fun softenedArtistBackground(source: Bitmap): Bitmap {
         modifier = Modifier
             .fillMaxWidth()
             .tvFocusTarget("artist:${artist.optString("id")}")
-            .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.036f)
-            .then(
-                if (focused) Modifier.glassSurface(TvShape.card, highlighted = true, base = Glass.surfaceFocus, elevation = 12.dp)
-                else Modifier
-            )
-            .tvFocus(focused, TvShape.card),
+            .onFocusChanged { focused = it.isFocused },
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(TvShape.card),
         colors = ButtonDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Color.Transparent),
-        contentPadding = PaddingValues(14.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
     ) {
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ArtistArtwork(app, artist, "portrait", Modifier.size(104.dp))
-            Text(artist.optString("name"), color = Paper, fontSize = 16.5.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${artist.optInt("count")} 首歌曲", color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(112.dp)
+                    .tvSpringFocus(focused, scaleTarget = 1.075f, liftDp = 2.dp)
+                    .then(
+                        if (focused) Modifier.shadow(14.dp, CircleShape, ambientColor = Glass.shadowFocus, spotColor = Glass.shadowFocus, clip = false)
+                        else Modifier
+                    )
+                    .tvFocus(focused, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                ArtistArtwork(app, artist, "portrait", Modifier.fillMaxSize())
+            }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    artist.optString("name"),
+                    color = if (focused) Color.White else Paper.copy(alpha = 0.92f),
+                    fontSize = 14.5.sp,
+                    lineHeight = 19.sp,
+                    fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${artist.optInt("count")} 首歌曲",
+                    color = if (focused) Paper.copy(alpha = 0.78f) else Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 @Composable internal fun PlaylistCard(app: TvApp, playlist: JSONObject, modifier: Modifier) {
     var focused by remember { mutableStateOf(false) }
+    val coverShape = RoundedCornerShape(14.dp)
     Button(
         onClick = { app.openPlaylist(playlist) },
         modifier = modifier
             .tvFocusTarget("playlist:${playlist.optString("id")}")
-            .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.036f)
-            .then(
-                if (focused) Modifier.glassSurface(TvShape.card, highlighted = true, base = Glass.surfaceFocus, elevation = 12.dp)
-                else Modifier
-            )
-            .tvFocus(focused, TvShape.card),
+            .onFocusChanged { focused = it.isFocused },
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(TvShape.card),
         colors = ButtonDefaults.colors(containerColor = Color.Transparent, contentColor = Paper, focusedContainerColor = Color.Transparent, focusedContentColor = Paper),
-        contentPadding = PaddingValues(7.dp),
+        contentPadding = PaddingValues(4.dp),
     ) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            SongArtwork(app, JSONObject(playlist.toString()).put("revision", playlist.optString("coverVersion")), Modifier.fillMaxWidth().aspectRatio(1f))
-            Column(Modifier.padding(horizontal = 4.dp, vertical = 3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(playlist.optString("name"), color = Paper, fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${playlist.optInt("count")} 首歌曲", color = Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .tvSpringFocus(focused, scaleTarget = 1.055f, liftDp = 2.dp)
+                    .then(
+                        if (focused) Modifier.shadow(14.dp, coverShape, ambientColor = Glass.shadowFocus, spotColor = Glass.shadowFocus, clip = false)
+                        else Modifier
+                    )
+                    .tvFocus(focused, coverShape),
+            ) {
+                SongArtwork(
+                    app,
+                    JSONObject(playlist.toString()).put("revision", playlist.optString("coverVersion")),
+                    Modifier.fillMaxSize(),
+                    shape = coverShape,
+                )
+            }
+            Column(Modifier.padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    playlist.optString("name"),
+                    color = if (focused) Color.White else Paper.copy(alpha = 0.92f),
+                    fontSize = 14.sp,
+                    lineHeight = 19.sp,
+                    fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${playlist.optInt("count")} 首歌曲",
+                    color = if (focused) Paper.copy(alpha = 0.78f) else Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
+                )
             }
         }
     }

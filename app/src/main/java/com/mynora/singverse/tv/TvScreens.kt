@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.key.*
@@ -48,9 +49,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatWriter
 import dev.chrisbanes.haze.rememberHazeState
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.*
 
 internal fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
@@ -124,35 +123,8 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
 
 @Composable internal fun TvScreen(app: TvApp, focusMemory: TvFocusMemory = remember(app.client.base) { TvFocusMemory() }) {
     val hazeState = rememberHazeState()
-    val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
-    val ambientSong = app.selected
-        ?: queue.firstOrNull { it.optString("status") == "PLAYING" }?.optJSONObject("song")
-        ?: queue.firstOrNull { it.optString("status") in listOf("HANDOFF", "WAITING") }?.optJSONObject("song")
-        ?: app.favoriteSongs().firstOrNull()
-    val ambientId = ambientSong?.optString("id").orEmpty()
-    val ambientCover = ambientSong?.optString("coverPath").orEmpty()
-    val ambientRev = ambientSong?.optString("revision").orEmpty()
-    var ambientColors by remember(ambientId) { mutableStateOf(fallbackAmbientColors(ambientId)) }
-    var backdropBitmap by remember(app.client.base, ambientCover, ambientRev) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(app.client.base, ambientId, ambientCover, ambientRev) {
-        ambientColors = fallbackAmbientColors(ambientId)
-        if (ambientCover.isNotBlank()) {
-            val bmp = runCatching { app.client.image(ambientCover, ambientRev) }.getOrNull()
-            if (bmp != null) {
-                val extracted = withContext(Dispatchers.Default) { cachedAmbientColors("$ambientId:$ambientRev", bmp) }
-                if (extracted != null) ambientColors = extracted
-                backdropBitmap = if (GlassTier.current.supportsBackdropBlur) bmp
-                else withContext(Dispatchers.Default) { softenedArtistBackground(bmp) }
-            } else backdropBitmap = null
-        } else backdropBitmap = null
-    }
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
-        AmbientStage(
-            modifier = Modifier.tvHazeSource(hazeState),
-            primaryGlow = ambientColors.first,
-            secondaryGlow = ambientColors.second,
-            backdropBitmap = backdropBitmap,
-        )
+        AmbientStage(modifier = Modifier.tvHazeSource(hazeState))
         val density = LocalDensity.current
         val scale = minOf(maxWidth.value / 960f, maxHeight.value / 540f)
         CompositionLocalProvider(
@@ -681,9 +653,9 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" }
     val next = queue.firstOrNull { it.optString("status") == "HANDOFF" } ?: queue.firstOrNull { it.optString("status") == "WAITING" }
     val song = (current ?: next)?.optJSONObject("song")
-    val barHeight = if (compact) 42.dp else 48.dp
-    val artSize = if (compact) 30.dp else 34.dp
-    val buttonSize = Modifier.height(if (compact) 28.dp else 32.dp)
+    val barHeight = if (compact) 46.dp else 50.dp
+    val artSize = if (compact) 32.dp else 36.dp
+    val buttonSize = Modifier.height(if (compact) 30.dp else 32.dp)
     val idle = song == null && current == null
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Row(
@@ -693,26 +665,39 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                 .glassSurface(
                     GlassShape.pill,
                     highlighted = current != null,
-                    intensity = if (idle) 0.60f else 0.90f,
-                    base = if (idle) Glass.surfaceCard else Glass.surfaceFloat,
-                    elevation = if (idle) 2.dp else 5.dp,
+                    intensity = if (idle) 0.85f else 1f,
+                    base = Glass.surfaceFloat,
+                    elevation = 6.dp,
                     backdropBlur = true,
                 )
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(11.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SongArtwork(app, song, Modifier.size(artSize), shape = CircleShape)
+            if (song != null) {
+                SongArtwork(app, song, Modifier.size(artSize), shape = CircleShape)
+            } else {
+                Box(
+                    Modifier
+                        .size(artSize)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1D212A))
+                        .border(0.75.dp, Glass.champagneGold.copy(alpha = 0.30f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MusicMark(Modifier.size(16.dp), tint = Glass.champagneGold)
+                }
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    if (current != null) LiveEqualizer(app.playing, color = Brand)
+                    if (current != null) LiveEqualizer(app.playing, color = Glass.champagneGold)
                     Text(
                         when {
                             song == null -> "今晚，唱你喜欢的歌"
                             else -> song.optString("title")
                         },
-                        color = if (song == null) Muted else Paper,
-                        fontSize = if (compact) 13.sp else 14.sp,
+                        color = Paper,
+                        fontSize = if (compact) 13.5.sp else 14.5.sp,
                         lineHeight = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -726,7 +711,7 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                         next != null -> "${song?.artists()} · 等待确认开唱"
                         else -> "选一首喜欢的歌开始"
                     },
-                    color = if (current != null) Paper.copy(alpha = 0.72f) else Muted,
+                    color = Muted,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
                     maxLines = 1,
@@ -770,18 +755,30 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
 }
 
 @Composable private fun Library(app: TvApp, list: LazyListState) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("搜索歌曲", color = Paper, fontSize = 23.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold)
-            Text("按歌名、歌手、拼音或歌曲编号查找", color = Muted, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val hasFilters = app.selectedTags.isNotEmpty() || app.unclassified || app.artistId.isNotBlank() || app.query.isNotBlank()
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f)) { Input(app.query, "搜索歌名、歌手、拼音或编号") { app.query = it } }
+            Text(
+                "${app.total} 首${if (app.selectedTags.isNotEmpty()) " · ${app.selectedTags.size} 项分类" else ""}",
+                color = Muted,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier
+                    .clip(GlassShape.pill)
+                    .background(Color(0x12FFFFFF))
+                    .padding(horizontal = 11.dp, vertical = 5.dp),
+            )
+            Action("搜索", selected = true, shape = GlassShape.pill) { app.artistId = ""; app.search() }
+            Action("分类", shape = GlassShape.pill) { app.navigate("分类") }
+            if (hasFilters) {
+                Action("清除筛选", shape = GlassShape.pill) { app.selectedTags = emptySet(); app.unclassified = false; app.artistId = ""; app.query = ""; app.search() }
+            }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { Input(app.query, "歌名 / 歌手 / 拼音 / 编号") { app.query = it } }
-            Action("搜索", selected = true) { app.artistId = ""; app.search() }
-            Action("分类") { app.navigate("分类") }
-            Action("清除筛选") { app.selectedTags = emptySet(); app.unclassified = false; app.artistId = ""; app.search() }
-        }
-        SectionTitle("曲库结果", "${app.total} 首歌曲${if (app.selectedTags.isNotEmpty()) " · ${app.selectedTags.size} 项分类" else ""}")
         if (app.songs.isEmpty()) EmptyState(if (app.busy) "正在找歌" else "没有找到歌曲", "试试其他关键词，或清除筛选条件。", Modifier.weight(1f))
         else SongTable(app, list, Modifier.weight(1f))
         SongPagination(app)
@@ -828,19 +825,30 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
             }
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("分类", color = Paper, fontSize = 25.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold)
-            Text("选择分类，直接查看歌曲；数量为全库歌曲数。", color = Muted, fontSize = 12.5.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(6.dp)) {
-            items(dimensions.keys.toList()) { key ->
-                Action(
-                    dimensions.getValue(key),
-                    modifier = Modifier.onFocusChanged { if (it.isFocused && memory.directionalInput && !memory.restoring && memory.activeDialogs == 0) selectDimension(key) },
-                    selected = dimension == key,
-                ) { selectDimension(key) }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            LazyRow(
+                modifier = Modifier
+                    .wrapContentWidth()
+                    .clip(GlassShape.pill)
+                    .background(Color(0x0FFFFFFF))
+                    .border(1.dp, Color(0x14FFFFFF), GlassShape.pill),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                contentPadding = PaddingValues(4.dp),
+            ) {
+                items(dimensions.keys.toList()) { key ->
+                    CategoryDimensionPill(
+                        label = dimensions.getValue(key),
+                        selected = dimension == key,
+                        onFocusSelect = { if (memory.directionalInput && !memory.restoring && memory.activeDialogs == 0) selectDimension(key) },
+                    ) { selectDimension(key) }
+                }
             }
+            Action("未分类", shape = GlassShape.pill, textSize = 13.sp) { app.openCategory() }
         }
         val tags = app.tags.filter { it.optString("dimension") == dimension }
         if (tags.isEmpty()) EmptyState("暂无${dimensions[dimension]}分类", "可以在 NAS 管理页整理歌曲分类。", Modifier.weight(1f))
@@ -849,9 +857,9 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                 GridCells.Fixed(4),
                 state = grid,
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 items(tags, key = { it.getString("id") }) { tag ->
                     val id = tag.getString("id")
@@ -859,25 +867,92 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                 }
             }
         }
-        Action("未分类") { app.openCategory() }
+    }
+}
+
+@Composable private fun CategoryDimensionPill(
+    label: String,
+    selected: Boolean,
+    onFocusSelect: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = GlassShape.pill
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .height(34.dp)
+            .tvFocusTarget("action:$label")
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocusSelect()
+            }
+            .tvSpringFocus(focused, scaleTarget = 1.04f, liftDp = 0.5.dp)
+            .then(
+                when {
+                    focused -> Modifier.tvPlatinumFocus(true, shape)
+                    selected -> Modifier.clip(shape).background(Color(0x1EFFFFFF))
+                    else -> Modifier
+                }
+            ),
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        shape = ButtonDefaults.shape(shape),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+        colors = ButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = if (selected) Paper else Glass.inkSecondary,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = Glass.focusInk,
+        ),
+    ) {
+        Text(
+            label,
+            fontSize = 13.5.sp,
+            lineHeight = 18.sp,
+            fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
 @Composable private fun Artists(app: TvApp, grid: LazyGridState) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Heading("歌手", "从你的曲库发现歌手")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.weight(1f)) { Input(app.artistQuery, "查找歌手") { app.artistQuery = it } }
-            Action("查找", selected = true) { app.artistPage = 0; app.loadArtists() }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("歌手", color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+                if (app.artistTotal > 0) {
+                    Text(
+                        "${app.artistTotal} 位",
+                        color = Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier
+                            .clip(GlassShape.pill)
+                            .background(Color(0x12FFFFFF))
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                }
+            }
+            Box(Modifier.width(300.dp)) { Input(app.artistQuery, "查找歌手") { app.artistQuery = it } }
+            Action("查找", selected = true, shape = GlassShape.pill) { app.artistPage = 0; app.loadArtists() }
         }
         if (app.artists.isEmpty()) EmptyState(if (app.busy) "正在读取歌手" else "还没有歌手", "请检查已保存的歌曲元数据。", Modifier.weight(1f))
         else LazyVerticalGrid(
-            GridCells.Fixed(4),
+            GridCells.Fixed(5),
             state = grid,
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             items(app.artists, key = { it.getString("id") }) { artist -> ArtistCard(app, artist) }
         }
@@ -886,20 +961,35 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
 }
 
 @Composable private fun Playlists(app: TvApp, grid: LazyGridState) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Heading("我的歌单", "为每一次欢聚准备的音乐")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Box(Modifier.weight(1f)) { Input(app.playlistQuery, "查找歌单") { app.playlistQuery = it } }
-            Action("查找", selected = true) { app.playlistPage = 0; app.loadPlaylists() }
+            if (app.playlistTotal > 0) {
+                Text(
+                    "${app.playlistTotal} 个歌单",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier
+                        .clip(GlassShape.pill)
+                        .background(Color(0x12FFFFFF))
+                        .padding(horizontal = 11.dp, vertical = 5.dp),
+                )
+            }
+            Action("查找", selected = true, shape = GlassShape.pill) { app.playlistPage = 0; app.loadPlaylists() }
         }
         if (app.playlists.isEmpty()) EmptyState(if (app.busy) "正在读取歌单" else "还没有歌单", "可在 NAS 管理端的歌单管理中创建，支持 AI 辅助选歌。", Modifier.weight(1f))
         else LazyVerticalGrid(
             GridCells.Fixed(5),
             state = grid,
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             items(app.playlists, key = { it.getString("id") }) { playlist -> PlaylistCard(app, playlist, Modifier.fillMaxWidth()) }
         }
@@ -955,51 +1045,91 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     val song = app.selected ?: return
     fun field(name: String) = song.optString(name).takeIf { it.isNotBlank() && it != "null" }
     val album = listOfNotNull(field("album"), field("releaseDate")).joinToString(" · ")
-    val (glowPrimary, glowSecondary) = remember(song.optString("id")) { fallbackAmbientColors(song.optString("id")) }
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("点歌  /  歌曲详情", color = Muted, fontSize = 12.sp, lineHeight = 17.sp)
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            Canvas(Modifier.fillMaxSize()) {
-                val radius = size.height * .82f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(glowPrimary.copy(alpha = .28f), Color.Transparent),
-                        center = androidx.compose.ui.geometry.Offset(size.width * .20f, size.height * .50f),
-                        radius = radius,
-                    ),
-                    radius = radius,
-                    center = androidx.compose.ui.geometry.Offset(size.width * .20f, size.height * .50f),
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(glowSecondary.copy(alpha = .18f), Color.Transparent),
-                        center = androidx.compose.ui.geometry.Offset(size.width * .72f, size.height * .32f),
-                        radius = radius * 0.9f,
-                    ),
-                    radius = radius * 0.9f,
-                    center = androidx.compose.ui.geometry.Offset(size.width * .72f, size.height * .32f),
-                )
-            }
+    val coverShape = RoundedCornerShape(18.dp)
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 360.dp)
+                .glassSurface(TvShape.panel, base = Glass.surfaceCard, elevation = 6.dp)
+                .clip(TvShape.panel),
+        ) {
             Row(
-                Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 6.dp),
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 32.dp, vertical = 28.dp),
                 horizontalArrangement = Arrangement.spacedBy(34.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SongArtwork(app, song, Modifier.size(252.dp), shape = TvShape.panel)
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(song.optString("title"), color = Paper, fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(song.artists(), color = Paper.copy(alpha = .86f), fontSize = 19.sp, lineHeight = 26.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (album.isNotEmpty()) Text(album, color = Muted, fontSize = 14.5.sp, lineHeight = 21.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    Modifier
+                        .size(248.dp)
+                        .shadow(20.dp, coverShape, ambientColor = Glass.shadowFocus, spotColor = Glass.shadowFocus, clip = false),
+                ) {
+                    SongArtwork(app, song, Modifier.fillMaxSize(), shape = coverShape)
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        song.optString("title"),
+                        color = Paper,
+                        fontSize = 32.sp,
+                        lineHeight = 39.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        song.artists(),
+                        color = Paper.copy(alpha = 0.86f),
+                        fontSize = 18.sp,
+                        lineHeight = 24.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (album.isNotEmpty()) {
+                        Text(
+                            album,
+                            color = Muted,
+                            fontSize = 13.5.sp,
+                            lineHeight = 19.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Row(
+                        Modifier.padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         if (song.optLong("durationMs") > 0) DetailTag(time(song.optLong("durationMs")))
                         DetailTag(versionLabel(song.optString("version")))
+                        field("sourceName")?.let { DetailTag("来源 · $it") }
                     }
-                    field("sourceName")?.let { Text("来源  ·  $it", color = Muted, fontSize = 13.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Action("＋ 加入待唱", modifier = Modifier.height(46.dp).width(204.dp), selected = true, focusKey = "加入待唱", textSize = 18.sp) {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(Color(0x12FFFFFF)))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Action(
+                            "＋ 加入待唱",
+                            modifier = Modifier.height(44.dp).width(164.dp),
+                            selected = true,
+                            focusKey = "加入待唱",
+                            textSize = 15.5.sp,
+                            shape = GlassShape.pill,
+                            fillWidth = true,
+                        ) {
                             app.command("ADD", songId = song.getString("id")); app.selected = null
                         }
-                        Action("返回曲库", modifier = Modifier.height(46.dp), textSize = 15.sp) { app.selected = null }
+                        Action(
+                            "返回曲库",
+                            modifier = Modifier.height(44.dp),
+                            textSize = 14.5.sp,
+                            shape = GlassShape.pill,
+                        ) { app.selected = null }
                     }
                 }
             }
@@ -1010,11 +1140,16 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
 @Composable private fun DetailTag(label: String) {
     Text(
         label,
-        modifier = Modifier.glassSurface(GlassShape.pill, base = Glass.surfaceCard).padding(horizontal = 12.dp, vertical = 5.dp),
-        color = Paper,
+        modifier = Modifier
+            .clip(GlassShape.pill)
+            .background(Color(0x12FFFFFF))
+            .padding(horizontal = 12.dp, vertical = 5.dp),
+        color = Paper.copy(alpha = 0.88f),
         fontSize = 12.sp,
-        lineHeight = 17.sp,
+        lineHeight = 16.sp,
         fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -1023,60 +1158,165 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
     val waiting = tvWaitingQueue(queue) { it.optString("status") }
     val current = queue.firstOrNull { it.optString("status") == "PLAYING" } ?: queue.firstOrNull { it.optString("status") == "HANDOFF" }
-    val showTopRow = compact || (!compact && fair && waiting.size > 1) || (current == null && waiting.isNotEmpty())
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (showTopRow) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (compact) SectionTitle("接下来", "${waiting.size} 首待唱")
-            Spacer(Modifier.weight(1f))
-            if (!compact && fair && waiting.size > 1) Action("公平打乱", quiet = true, textSize = 13.sp) { app.command("SHUFFLE") }
-            if (current == null && waiting.isNotEmpty()) Action("开始下一首", selected = true, shape = GlassShape.pill, textSize = 13.sp) { app.command("START") }
-        }
-        if (!compact) current?.let { item ->
-            val song = item.optJSONObject("song")
-            val playback = app.snapshot.optJSONObject("playback")
-            val confirmed = playback?.optString("itemId") == item.optString("id") && playback?.optBoolean("confirmed") == true
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .glassSurface(TvShape.card, highlighted = true, base = Glass.surfaceFloat, tintAccent = Brand.copy(alpha = 0.08f), elevation = 10.dp)
-                    .padding(13.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                SongArtwork(app, song, Modifier.size(56.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        LiveEqualizer(app.playing, color = Brand)
-                        StatusPill(
-                            when {
-                                item.optString("status") == "HANDOFF" && !confirmed -> "等待确认开唱"
-                                !app.hasConfirmedPlayback -> "准备中"
-                                else -> stateLabel(app.playerState)
-                            },
-                            Brand,
-                        )
-                    }
-                    Text(song?.optString("title").orEmpty(), color = Paper, fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(song?.artists().orEmpty(), color = Muted, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (item.optString("status") == "HANDOFF" && !confirmed) Action("确认开唱", selected = true) { app.command("START") }
-                else Action("返回演唱", selected = true) { app.page = "演唱" }
-            }
-        }
-        if (waiting.isEmpty()) {
-            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                EmptyState("暂无待唱歌曲", "去点歌，选一首喜欢的歌。")
-                Action("去点歌", selected = true) { app.navigate("点歌") }
-            }
-        } else {
-            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(6.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(waiting, key = { it.getString("id") }) { item -> QueueRow(app, item, waiting.indexOf(item), waiting.size) }
-            }
-            if (!compact) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (fair) "临时插队仅占一个下一首优先位，唱完恢复轮流" else "确认歌曲后选择排序操作", color = Muted, fontSize = 12.sp)
+    if (compact) {
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionTitle("接下来", "${waiting.size} 首待唱")
                 Spacer(Modifier.weight(1f))
-                Action("清空待唱", danger = true) { app.pendingConfirm = "清空待唱" }
+                if (current == null && waiting.isNotEmpty()) Action("开始下一首", selected = true, shape = GlassShape.pill, textSize = 13.sp) { app.command("START") }
             }
+            if (waiting.isEmpty()) {
+                Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    EmptyState("暂无待唱歌曲", "去点歌，选一首喜欢的歌。")
+                    Action("去点歌", selected = true, shape = GlassShape.pill) { app.navigate("点歌") }
+                }
+            } else {
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(4.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    items(waiting, key = { it.getString("id") }) { item -> QueueRow(app, item, waiting.indexOf(item), waiting.size) }
+                }
+            }
+        }
+        return
+    }
+    if (current == null && waiting.isEmpty()) {
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            EmptyState("暂无待唱歌曲", "去点歌，选一首喜欢的歌。")
+            Action("去点歌", selected = true, shape = GlassShape.pill) { app.navigate("点歌") }
+        }
+        return
+    }
+    val heroItem = current ?: waiting.first()
+    val heroSong = heroItem.optJSONObject("song")
+    val playback = app.snapshot.optJSONObject("playback")
+    val heroConfirmed = current != null && playback?.optString("itemId") == current.optString("id") && playback?.optBoolean("confirmed") == true
+    val heroStatus = when {
+        current == null -> "即将演唱 · 01"
+        current.optString("status") == "HANDOFF" && !heroConfirmed -> "等待确认开唱"
+        !app.hasConfirmedPlayback -> "准备中"
+        else -> stateLabel(app.playerState)
+    }
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        // Left Hero Stage: Currently Playing or Next Up (#01)
+        Column(
+            Modifier
+                .width(284.dp)
+                .fillMaxHeight()
+                .glassSurface(TvShape.panel, base = Glass.surfaceCard, elevation = 5.dp)
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    if (current != null) LiveEqualizer(app.playing, color = Brand)
+                    else Box(Modifier.size(7.dp).background(Brand, CircleShape))
+                    Text(heroStatus, color = Paper.copy(alpha = 0.88f), fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Text(
+                    "${waiting.size} 首待唱",
+                    color = Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
+                )
+            }
+            Column(
+                Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                val heroShape = RoundedCornerShape(16.dp)
+                Box(
+                    Modifier
+                        .size(176.dp)
+                        .shadow(16.dp, heroShape, ambientColor = Glass.shadowFocus, spotColor = Glass.shadowFocus, clip = false),
+                ) {
+                    SongArtwork(app, heroSong, Modifier.fillMaxSize(), shape = heroShape)
+                }
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        heroSong?.optString("title").orEmpty(),
+                        color = Paper,
+                        fontSize = 19.sp,
+                        lineHeight = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${heroSong?.artists().orEmpty()} · ${heroItem.optString("ownerName", "电视")}",
+                        color = Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            when {
+                current == null -> Action("开始下一首", Modifier.fillMaxWidth().height(40.dp), selected = true, shape = GlassShape.pill, textSize = 14.sp, fillWidth = true) { app.command("START") }
+                current.optString("status") == "HANDOFF" && !heroConfirmed -> Action("确认开唱", Modifier.fillMaxWidth().height(40.dp), selected = true, shape = GlassShape.pill, textSize = 14.sp, fillWidth = true) { app.command("START") }
+                else -> Action("返回演唱", Modifier.fillMaxWidth().height(40.dp), selected = true, shape = GlassShape.pill, textSize = 14.sp, fillWidth = true) { app.page = "演唱" }
+            }
+        }
+        // Right Stage: Waiting Queue List Panel
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .glassSurface(TvShape.panel, base = Glass.surfaceCard, elevation = 4.dp)
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("待唱列表", color = Paper, fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${waiting.size} 首",
+                    color = Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier
+                        .clip(GlassShape.pill)
+                        .background(Color(0x12FFFFFF))
+                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                )
+                Spacer(Modifier.weight(1f))
+                if (fair && waiting.size > 1) Action("公平打乱", shape = GlassShape.pill, textSize = 12.5.sp) { app.command("SHUFFLE") }
+                if (waiting.isNotEmpty()) Action("清空待唱", danger = true, shape = GlassShape.pill, textSize = 12.5.sp) { app.pendingConfirm = "清空待唱" }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
+            if (waiting.isEmpty()) {
+                Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    EmptyState("队列已空", "当前歌曲结束后可继续点歌。")
+                }
+            } else {
+                LazyColumn(
+                    Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(waiting, key = { it.getString("id") }) { item -> QueueRow(app, item, waiting.indexOf(item), waiting.size) }
+                }
+            }
+            Text(
+                if (fair) "临时插队仅占一个下一首优先位，唱完恢复轮流 · 选中歌曲按确认键排序或移除" else "选中歌曲按确认键进行置顶、调整顺序或移除",
+                color = Muted.copy(alpha = 0.78f),
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1093,8 +1333,9 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
             .animateContentSize(animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
             .onFocusChanged { rowFocused = it.hasFocus }
             .focusGroup()
-            .glassSurface(TvShape.row, highlighted = rowFocused, base = if (rowFocused) Glass.surfaceFocus else Glass.surfaceCard, elevation = if (rowFocused) 5.dp else 0.dp)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .clip(TvShape.control)
+            .background(if (rowFocused) Color(0x18FFFFFF) else Color(0x0AFFFFFF))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -1102,31 +1343,55 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
             onClick = { firstAction.requestFocus() },
             modifier = Modifier
                 .weight(1f)
-                .heightIn(min = 50.dp)
+                .heightIn(min = 48.dp)
                 .tvFocusTarget("action:queue:$id")
                 .onFocusChanged { songFocused = it.isFocused }
-                .tvFocus(songFocused, TvShape.control),
+                .then(
+                    if (songFocused) Modifier.tvPlatinumFocus(true, TvShape.control)
+                    else Modifier
+                ),
             scale = ButtonDefaults.scale(focusedScale = 1f),
             shape = ButtonDefaults.shape(TvShape.control),
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-            colors = ButtonDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Color.Transparent, contentColor = Paper, focusedContentColor = Paper),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            colors = ButtonDefaults.colors(
+                containerColor = Color.Transparent,
+                focusedContainerColor = Color.Transparent,
+                contentColor = Paper,
+                focusedContentColor = Glass.focusInk,
+            ),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     (index + 1).toString().padStart(2, '0'),
-                    Modifier.width(28.dp),
-                    color = if (index == 0 || rowFocused) Brand else Muted,
-                    fontSize = 16.sp,
+                    Modifier.width(26.dp),
+                    color = when {
+                        songFocused -> Glass.focusInk
+                        index == 0 -> Brand
+                        else -> Muted
+                    },
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                 )
-                SongArtwork(app, song, Modifier.size(40.dp), shape = RoundedCornerShape(9.dp))
+                SongArtwork(app, song, Modifier.size(38.dp), shape = RoundedCornerShape(8.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(song?.optString("title").orEmpty(), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        song?.optString("title").orEmpty(),
+                        color = if (songFocused) Glass.focusInk else Paper,
+                        fontSize = 14.5.sp,
+                        lineHeight = 19.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         "${song?.artists().orEmpty()} · ${item.optString("ownerName", "电视")}点的${if (item.optBoolean("priority")) " · 下一首优先" else ""}",
-                        color = if (item.optBoolean("priority")) Brand else Muted,
+                        color = when {
+                            songFocused -> Glass.focusInkMuted
+                            item.optBoolean("priority") -> Brand
+                            else -> Muted
+                        },
                         fontSize = 11.5.sp,
-                        lineHeight = 16.sp,
+                        lineHeight = 15.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1164,8 +1429,13 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
             withFrameNanos { }; withFrameNanos { }; updateActionFocus.requestFocus()
         }
     }
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        Column(Modifier.width(196.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(
+            Modifier
+                .width(196.dp)
+                .padding(top = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             listOf("连接", "播放设置", "聚会管理", "本场参与者", "设备信息", "应用更新").forEach { label ->
                 SettingsMenuItem(label, active = label == group) { group = label }
             }
@@ -1176,37 +1446,39 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                     .fillMaxWidth()
                     .wrapContentHeight()
                     .tvScreenEnter(group)
-                    .glassSurface(TvShape.panel, base = Glass.surfaceFloat)
+                    .glassSurface(TvShape.panel, base = Glass.surfaceCard, elevation = 4.dp)
                     .clip(TvShape.panel)
                     .verticalScroll(rememberScrollState())
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 when (group) {
                     "连接" -> {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(app.serverName, color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(app.client.base, color = Accent, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(app.serverName, color = Paper, fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(app.client.base, color = Glass.champagneBright, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             StatusPill(if (app.online) "连接正常" else "网络异常", if (app.online) Success else Danger, pulse = app.online)
                         }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
                         SettingActionRow("检查连接", "重新读取服务身份、聚会和播放状态") { Action("检查连接", textSize = 13.sp) { app.connect() } }
                         SettingActionRow("更换 NAS", "忘记这台电视保存的当前设备凭据") { Action("更换 NAS / 忘记连接", danger = true, textSize = 13.sp) { app.pendingConfirm = "更换 NAS" } }
                         SettingActionRow("停止本机播放", "只停止这台电视，不替远程交接自动确认") { Action("停止本机播放", textSize = 13.sp) { app.stopLocal() } }
                     }
                     "聚会管理" -> {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("聚会管理", color = Paper, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text("聚会管理", color = Paper, fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
                                 Text(if (app.snapshot.optBoolean("acceptingRequests")) "当前允许亲友点歌" else "当前已暂停接单", color = Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
                             }
                             StatusPill(
                                 if (app.snapshot.optString("status") == "ENDED") "聚会已结束" else if (app.snapshot.optBoolean("acceptingRequests")) "接单中" else "已暂停接单",
-                                if (app.snapshot.optBoolean("acceptingRequests")) Success else Brand,
+                                if (app.snapshot.optBoolean("acceptingRequests")) Success else Glass.champagneGold,
                                 pulse = app.snapshot.optBoolean("acceptingRequests"),
                             )
                         }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
                         if (app.snapshot.optString("status") == "ENDED") Action("开始新聚会", selected = true, shape = GlassShape.pill) { app.newSession() }
                         else {
                             SettingActionRow("亲友点歌", "暂停后保留现有队列，不再接收新点歌") {
@@ -1217,48 +1489,200 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
                     }
                     "播放设置" -> PlaybackSettings(app)
                     "应用更新" -> {
-                        Heading("应用更新", app.updateStatus)
-                        Text("当前版本  ${BuildConfig.VERSION_NAME} · ${BuildConfig.VERSION_CODE}", color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
-                        Text("安装包来自当前 NAS；Android 会要求你确认安装。", color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
-                        SettingActionRow("NAS 安装包", "连接后自动检查；每 24 小时复查，也可手动检查已跳过的版本") {
-                            Action(if (app.updateChecking) "正在检查…" else "检查更新", selected = true, focusKey = "check-update", enabled = !app.updateDownloading, textSize = 13.sp, shape = GlassShape.pill) { app.checkUpdate() }
+                        val updateFailed = app.updateStatus.contains("失败") || app.updateStatus.contains("不可用")
+                        val badgeLabel = when {
+                            app.updateChecking -> "正在检查"
+                            app.updateDownloading -> "正在下载"
+                            app.updateFile != null -> "已就绪 · 待安装"
+                            app.updateAvailable -> "发现新版本"
+                            updateFailed -> "暂未获取更新"
+                            else -> "已是最新版本"
+                        }
+                        val badgeColor = when {
+                            app.updateChecking || app.updateDownloading || app.updateAvailable -> Glass.champagneGold
+                            updateFailed -> Danger
+                            else -> Success
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(13.dp))
+                                    .background(Color(0x14FFFFFF))
+                                    .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(13.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                HomeGlyph("brand", Modifier.size(28.dp), Paper)
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text("SingVerse TV", color = Paper, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "当前版本 v${BuildConfig.VERSION_NAME} · Build ${BuildConfig.VERSION_CODE}",
+                                    color = Glass.champagneBright,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                )
+                            }
+                            StatusPill(badgeLabel, badgeColor, pulse = app.updateChecking || app.updateDownloading)
+                        }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
+                        if (app.updateStatus.isNotBlank()) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(TvShape.control)
+                                    .background(if (updateFailed) Color(0x16E85668) else Color(0x0EFFFFFF))
+                                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(7.dp)
+                                        .background(if (updateFailed) Danger else Glass.champagneGold, CircleShape)
+                                )
+                                Text(
+                                    app.updateStatus,
+                                    color = Paper.copy(alpha = 0.92f),
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            UpdateMetaTile("安装来源", "当前已连接的 NAS", Modifier.weight(1f))
+                            UpdateMetaTile("检查策略", "连接自动检查 · 每 24h 复查", Modifier.weight(1f))
+                            UpdateMetaTile("安装方式", "校验后由系统确认安装", Modifier.weight(1f))
                         }
                         app.updateRelease?.let { release ->
-                            if (release.notes.isNotBlank()) Text(release.notes, color = Paper, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                            if (release.notes.isNotBlank()) {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(TvShape.control)
+                                        .background(Color(0x0AFFFFFF))
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text("更新说明", color = Glass.champagneBright, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
+                                    Text(release.notes, color = Paper.copy(alpha = 0.9f), fontSize = 13.5.sp, lineHeight = 20.sp, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
                             if (app.updateDownloading) {
                                 val percent = (100 * app.updateDownloaded / release.size.coerceAtLeast(1L)).coerceIn(0, 100)
                                 Column(
-                                    Modifier.fillMaxWidth().glassSurface(TvShape.row, base = Glass.surfaceCard).padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(TvShape.control)
+                                        .background(Color(0x0CFFFFFF))
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(9.dp),
                                 ) {
-                                    Text("下载 $percent% · ${app.updateDownloaded / 1048576} / ${release.size / 1048576} MB", color = Brand, fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
-                                    Box(Modifier.fillMaxWidth().height(6.dp).background(Paper.copy(alpha = 0.12f), GlassShape.pill)) {
-                                        Box(Modifier.fillMaxWidth(percent / 100f).fillMaxHeight().brandGlassSurface(GlassShape.pill))
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text("正在下载更新包", color = Paper, fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
+                                        Text("$percent% · ${app.updateDownloaded / 1048576} / ${release.size / 1048576} MB", color = Glass.champagneBright, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
                                     }
-                                }
-                                Action("取消下载", Modifier.focusRequester(updateActionFocus)) { app.cancelUpdateDownload() }
-                            } else if (app.updateAvailable && app.updateFile == null) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Action("下载并校验", selected = true, shape = GlassShape.pill) { app.downloadUpdate() }
-                                    Action("跳过此版本", quiet = true) { app.skipUpdate() }
+                                    Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0x18FFFFFF), GlassShape.pill)) {
+                                        Box(Modifier.fillMaxWidth(percent / 100f).fillMaxHeight().background(Glass.champagneGold, GlassShape.pill))
+                                    }
                                 }
                             }
                         }
-                        if (app.updateFile != null) Action("确认安装", Modifier.focusRequester(updateActionFocus), selected = true, shape = GlassShape.pill) { app.installUpdate() }
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Action(
+                                if (app.updateChecking) "正在检查…" else "检查更新",
+                                selected = app.updateFile == null && !app.updateAvailable,
+                                focusKey = "check-update",
+                                enabled = !app.updateDownloading,
+                                textSize = 13.5.sp,
+                                shape = GlassShape.pill,
+                            ) { app.checkUpdate() }
+                            if (app.updateDownloading) {
+                                Action("取消下载", Modifier.focusRequester(updateActionFocus), textSize = 13.5.sp, shape = GlassShape.pill) { app.cancelUpdateDownload() }
+                            } else if (app.updateAvailable && app.updateFile == null) {
+                                Action("下载并校验", selected = true, textSize = 13.5.sp, shape = GlassShape.pill) { app.downloadUpdate() }
+                                Action("跳过此版本", quiet = true, textSize = 13.5.sp, shape = GlassShape.pill) { app.skipUpdate() }
+                            }
+                            if (app.updateFile != null) {
+                                Action("确认安装", Modifier.focusRequester(updateActionFocus), selected = true, textSize = 13.5.sp, shape = GlassShape.pill) { app.installUpdate() }
+                            }
+                        }
                     }
                     "设备信息" -> {
-                        Heading("设备信息", "用于确认播放终端与系统环境")
-                        InfoRow("设备型号", android.os.Build.MODEL)
-                        InfoRow("Android", android.os.Build.VERSION.RELEASE)
-                        InfoRow("应用", "SingVerse TV ${BuildConfig.VERSION_NAME}")
-                        InfoRow("播放", "Media3 · 直放 / 兼容播放")
+                        val tierLabel = when (GlassTier.current) {
+                            GlassTier.LIQUID -> "Liquid 硬件毛玻璃 (API 33+)"
+                            GlassTier.FROSTED -> "Frosted 轻量毛玻璃 (API 31+)"
+                            GlassTier.LEGACY -> "Legacy 高性能哑光 (API 21+)"
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(13.dp))
+                                    .background(Color(0x14FFFFFF))
+                                    .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(13.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                HomeGlyph("brand", Modifier.size(28.dp), Paper)
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    android.os.Build.MODEL,
+                                    color = Paper,
+                                    fontSize = 20.sp,
+                                    lineHeight = 25.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "用于确认播放终端与系统环境",
+                                    color = Muted,
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 18.sp,
+                                )
+                            }
+                            StatusPill("Android ${android.os.Build.VERSION.RELEASE}", Glass.champagneGold)
+                        }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            UpdateMetaTile("设备型号", android.os.Build.MODEL, Modifier.weight(1f))
+                            UpdateMetaTile("系统环境", "Android ${android.os.Build.VERSION.RELEASE} · API ${android.os.Build.VERSION.SDK_INT}", Modifier.weight(1f))
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            UpdateMetaTile("应用版本", "SingVerse TV v${BuildConfig.VERSION_NAME} · Build ${BuildConfig.VERSION_CODE}", Modifier.weight(1f))
+                            UpdateMetaTile("播放引擎", "Media3 · 直放 / 兼容播放", Modifier.weight(1f))
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            UpdateMetaTile("界面渲染策略", tierLabel, Modifier.weight(1f))
+                            UpdateMetaTile("兼容基线", "Android 5.0+ (minSdk 21)", Modifier.weight(1f))
+                        }
                     }
                     else -> {
                         Heading("本场参与者", "主持权限只在电视上授予；撤销后可重新扫码加入。")
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
                         if (app.participants.isEmpty()) EmptyState("还没有亲友加入", "通过「手机点歌」邀请亲友。")
                         app.participants.forEach { participant ->
                             Row(
-                                Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Glass.surfaceCard, elevation = 0.dp).padding(12.dp),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(TvShape.control)
+                                    .background(Color(0x0BFFFFFF))
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1277,6 +1701,19 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
     }
 }
 
+@Composable private fun UpdateMetaTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(TvShape.control)
+            .background(Color(0x0AFFFFFF))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, color = Muted, fontSize = 11.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
+        Text(value, color = Paper, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 @Composable private fun SettingsMenuItem(label: String, active: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val shape = TvShape.control
@@ -1284,43 +1721,49 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .height(44.dp)
             .tvFocusTarget("action:$label")
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.022f, liftDp = 0.5.dp)
+            .tvSpringFocus(focused, scaleTarget = 1.035f, liftDp = 0.8.dp)
             .then(
                 when {
-                    focused -> Modifier.glassSurface(shape, highlighted = true, base = Glass.surfaceFocus)
-                    active -> Modifier.glassSurface(shape, highlighted = false, intensity = 0.85f, base = Glass.surfaceSelected, elevation = 0.dp)
-                    else -> Modifier.glassSurface(shape, intensity = 0.45f, base = Color(0x0DFFFFFF), elevation = 0.dp)
+                    focused -> Modifier.tvPlatinumFocus(true, shape)
+                    active -> Modifier.clip(shape).background(Color(0x16FFFFFF))
+                    else -> Modifier
                 }
-            )
-            .tvFocus(focused, shape),
+            ),
         scale = ButtonDefaults.scale(focusedScale = 1f),
         shape = ButtonDefaults.shape(shape),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
         colors = ButtonDefaults.colors(
             containerColor = Color.Transparent,
-            contentColor = if (active) Paper else Muted,
+            contentColor = if (active) Paper else Glass.inkSecondary,
             focusedContainerColor = Color.Transparent,
-            focusedContentColor = Paper,
+            focusedContentColor = Glass.focusInk,
         ),
     ) {
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Box(
                 Modifier
-                    .width(3.dp)
+                    .width(2.5.dp)
                     .height(16.dp)
-                    .background(if (active) Brand else Color.Transparent, GlassShape.pill)
+                    .background(
+                        when {
+                            focused && active -> Glass.focusInk
+                            active -> Paper
+                            else -> Color.Transparent
+                        },
+                        GlassShape.pill,
+                    )
             )
             Text(
                 label,
-                fontSize = 14.sp,
-                lineHeight = 19.sp,
+                fontSize = 14.5.sp,
+                lineHeight = 20.sp,
                 fontWeight = if (active || focused) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1331,24 +1774,18 @@ internal fun queuedSongCount(app: TvApp) = app.snapshot.optJSONArray("queue")?.o
 
 @Composable private fun SettingActionRow(title: String, description: String, action: @Composable () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Glass.surfaceCard, elevation = 0.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+        Modifier
+            .fillMaxWidth()
+            .clip(TvShape.control)
+            .background(Color(0x0BFFFFFF))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, color = Paper, fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
-            Text(description, color = Muted, fontSize = 11.5.sp, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(description, color = Muted, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(12.dp))
         action()
-    }
-}
-
-@Composable private fun InfoRow(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth().glassSurface(TvShape.row, intensity = 0.65f, base = Glass.surfaceCard, elevation = 0.dp).padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, Modifier.width(110.dp), color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
-        Text(value, color = Paper, fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
