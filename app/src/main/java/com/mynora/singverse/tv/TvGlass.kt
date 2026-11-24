@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -170,10 +171,11 @@ internal object GlassShape {
 }
 
 internal object TvMotion {
+    val appleEase = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
     val focusSpring = spring<Float>(dampingRatio = 0.82f, stiffness = 460f)
     val subtleSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 460f)
     val dialogSpring = spring<Float>(dampingRatio = 0.84f, stiffness = 380f)
-    const val pageTransitionMs = 200
+    const val pageTransitionMs = 240
     const val ambientCrossfadeMs = 1100
 }
 

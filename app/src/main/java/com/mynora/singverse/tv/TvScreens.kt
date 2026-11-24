@@ -4,6 +4,7 @@ package com.mynora.singverse.tv
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -12,8 +13,13 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -187,6 +193,20 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             it.popular.isEmpty() && showsHomeRetry(app.homePopularLoading, app.homePopularReady, app.homePopularError),
         )
     }
+    var settledView by remember { mutableStateOf(view) }
+    val navDestinationKey = "nav:$selectedNavigation"
+    val activityTabKey = when (app.page) {
+        "历史记录" -> "action:activity:tab:history"
+        "热门歌曲" -> "action:activity:tab:popular"
+        else -> null
+    }
+    if (view != settledView && memory.activeDialogs == 0 &&
+        memory.last[view] != navDestinationKey &&
+        (activityTabKey == null || memory.last[view] != activityTabKey)
+    ) {
+        // Suppress transient TopBar focus flash while the outgoing screen disposes and the new screen settles.
+        memory.restoring = true
+    }
     if (memory.activeDialogs == 0 && home?.unavailableSong(memory.last[view]) == true) {
         // Keep the previous song address until the home shelf chooses its replacement.
         memory.restoring = true
@@ -206,16 +226,32 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             val navigation = "nav:$selectedNavigation"
             if (app.page == selectedNavigation && memory.last[view] == navigation && memory.focusedTargets.singleOrNull() == "$view:$navigation") {
                 // Navigation survives the page content change; restoring it would interrupt key repeats.
+                settledView = view
+                memory.restoring = false
+                return@LaunchedEffect
+            }
+            val activityTab = when (app.page) {
+                "历史记录" -> "action:activity:tab:history"
+                "热门歌曲" -> "action:activity:tab:popular"
+                else -> null
+            }
+            if (activityTab != null && memory.last[view] == activityTab && memory.focusedTargets.singleOrNull() == "$view:$activityTab") {
+                // Activity header tab survives switching between 历史记录 and 热门歌曲 without bouncing focus.
+                settledView = view
                 memory.restoring = false
                 return@LaunchedEffect
             }
             val focused = memory.last[view]
             if (home != null && !memory.restoring && focused != null &&
                 !home.unavailableSong(focused) && memory.focusedTargets.singleOrNull() == "$view:$focused"
-            ) return@LaunchedEffect
+            ) {
+                settledView = view
+                return@LaunchedEffect
+            }
             memory.restoring = true
-            withFrameNanos { }; withFrameNanos { }
+            withFrameNanos { }
             if (memory.activeDialogs > 0) return@LaunchedEffect
+            var scrolled = false
             val songList = when {
                 app.playlistDetail != null -> playlistSongs
                 app.artistDetail != null -> artistSongs
@@ -225,6 +261,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             if (app.selected == null && songList != null && handledSongListReset != app.songListResetVersion) {
                 handledSongListReset = app.songListResetVersion
                 songList.scrollToItem(0)
+                scrolled = true
                 if (app.songListFocusFirst || memory.last[view]?.startsWith("song:") == true) {
                     app.songs.firstOrNull()?.let { memory.last[view] = "song:${it.getString("id")}" }
                 }
@@ -236,7 +273,7 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                 if ((app.page == "历史记录" && target.startsWith("history:")) || (app.page == "热门歌曲" && target.startsWith("popular:"))) {
                     val (state, items) = if (app.page == "历史记录") historySongs to app.homeHistorySongs else popularSongs to app.homePopularSongs
                     val index = items.indexOfFirst { it.optString("id") == id }
-                    if (index >= 0) state.scrollToItem(index)
+                    if (index >= 0) { state.scrollToItem(index); scrolled = true }
                 } else if (songList != null && target.startsWith("song:")) {
                     var index = app.songs.indexOfFirst { it.optString("id") == id }
                     if (index < 0 && app.songs.isNotEmpty()) {
@@ -246,7 +283,10 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                     if (index >= 0) {
                         val layout = songList.layoutInfo
                         val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
-                        if (item == null || item.offset < layout.viewportStartOffset || item.offset + item.size > layout.viewportEndOffset) songList.scrollToItem(index)
+                        if (item == null || item.offset < layout.viewportStartOffset || item.offset + item.size > layout.viewportEndOffset) {
+                            songList.scrollToItem(index)
+                            scrolled = true
+                        }
                     }
                 } else {
                     val (state, items) = when {
@@ -259,28 +299,40 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                     if (index >= 0) {
                         val layout = state.layoutInfo
                         val item = layout.visibleItemsInfo.firstOrNull { it.index == index }
-                        if (item == null || item.offset.y < layout.viewportStartOffset || item.offset.y + item.size.height > layout.viewportEndOffset) state.scrollToItem(index)
+                        if (item == null || item.offset.y < layout.viewportStartOffset || item.offset.y + item.size.height > layout.viewportEndOffset) {
+                            state.scrollToItem(index)
+                            scrolled = true
+                        }
                     }
                 }
             }
-            withFrameNanos { }
+            if (scrolled) withFrameNanos { }
             if ((home?.unavailableSong(target) == true || !memory.restore(view)) && app.page != "演唱") {
                 val homeEntry = home?.restoredEntry(target)
                 val default = when {
                     homeEntry != null -> homeEntry
                     app.selected != null -> "action:加入待唱"
-                    app.playlistDetail != null -> "action:返回歌单"
-                    app.artistDetail != null -> "action:返回歌手"
+                    app.playlistDetail != null -> app.songs.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }?.let { "song:$it" } ?: "action:返回歌单"
+                    app.artistDetail != null -> app.songs.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }?.let { "song:$it" } ?: "action:返回歌手"
+                    app.page == "历史记录" -> "action:activity:tab:history"
+                    app.page == "热门歌曲" -> "action:activity:tab:popular"
+                    app.page == "找歌" -> app.songs.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }?.let { "song:$it" } ?: "action:$SongSearchHint"
+                    app.page == "歌手" -> app.artists.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }?.let { "artist:$it" } ?: "action:查找歌手"
+                    app.page == "分类" -> "action:${categoryDimensionLabel(categoryDimension)}"
+                    app.page == "歌单" -> app.playlists.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }?.let { "playlist:$it" } ?: "action:查找歌单"
+                    app.page == "收藏" -> app.favoriteSongs().firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }?.let { "action:favorite:$it" } ?: "action:刷新收藏"
                     else -> null
                 }
-                if (default != null) {
+                val defaultRequester = default?.let { memory.targets["$view:$it"] }
+                if (default != null && defaultRequester != null) {
                     memory.rememberFocus(view, default)
-                    memory.targets["$view:$default"]?.requestFocus()
+                    defaultRequester.requestFocus()
                 } else {
                     memory.last[view] = "nav:$selectedNavigation"
                     homeFocus.requestFocus()
                 }
             }
+            settledView = view
             memory.restoring = false
             if (app.page == "演唱") memory.focusedTargets.singleOrNull()?.takeIf { it.startsWith("$view:") }?.let { memory.last[view] = it.removePrefix("$view:") }
         }
@@ -305,15 +357,31 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
         memory.directionalInput = it.type == KeyEventType.KeyDown && it.key in listOf(Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown)
         false
     }) {
-        when {
-            !app.connected -> TvLoginScreen(app)
-            app.page == "演唱" -> PlayerScreen(app)
-            else -> Column(
-                Modifier
-                    .fillMaxSize()
-                    .padding(start = 42.dp, end = 42.dp, top = 18.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
+        val rootMode = when {
+            !app.connected -> "login"
+            app.page == "演唱" -> "player"
+            else -> "shell"
+        }
+        AnimatedContent(
+            targetState = rootMode,
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                fadeIn(tween(200, delayMillis = 40, easing = FastOutSlowInEasing)) togetherWith
+                    fadeOut(tween(120, easing = FastOutSlowInEasing))
+            },
+            label = "tv-root-stage",
+        ) { mode ->
+            val modeCurrent = mode == rootMode
+            Box(if (modeCurrent) Modifier.fillMaxSize() else Modifier.fillMaxSize().focusProperties { canFocus = false }) {
+                when (mode) {
+                    "login" -> TvLoginScreen(app)
+                    "player" -> PlayerScreen(app)
+                    else -> Column(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(start = 42.dp, end = 42.dp, top = 18.dp, bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
                 // Consistent centered Floating Liquid Glass Top Navigation Bar across all pages
                 Box(Modifier.fillMaxWidth().height(42.dp)) {
                     Row(
@@ -370,39 +438,75 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
                         }
                     }
                 }
-                Box(Modifier.weight(1f).tvScreenEnter(view)) {
-                    if (app.selected != null) Detail(app)
-                    else if (app.playlistDetail != null) PlaylistDetail(app, playlistSongs)
-                    else if (app.artistDetail != null) ArtistDetail(app, artistSongs)
-                    else when (app.page) {
-                        "首页" -> TvHomeScreen(
-                            app, checkNotNull(home),
-                            onSearch = {
-                                homeSearchOpen = true
-                                memory.last["找歌"] = "action:$SongSearchHint"
-                                app.navigate("找歌")
-                            },
-                            onPhone = {
-                                if (!app.online) app.reconnect()
-                                app.ensureInvitation()
-                                invitationOpen = true
-                            },
-                        )
-                        "历史记录" -> TvHomeActivityScreen(app, popular = false, state = historySongs)
-                        "热门歌曲" -> TvHomeActivityScreen(app, popular = true, state = popularSongs)
-                        "点歌" -> SongCenter(app)
-                        "找歌" -> Library(app, librarySongs)
-                        "歌单" -> Playlists(app, playlistsGrid)
-                        "歌手" -> Artists(app, artistsGrid)
-                        "分类" -> Categories(app, categoriesGrid, categoryDimension) { categoryDimension = it }
-                        "收藏" -> FavoritesContent(app, Modifier.fillMaxSize())
-                        "已点" -> Queue(app)
-                        "设置" -> Settings(app)
+                val screenTransitionKey = when {
+                    app.selected != null || app.playlistDetail != null || app.artistDetail != null -> view
+                    app.page == "历史记录" || app.page == "热门歌曲" -> "activity"
+                    else -> view
+                }
+                val contentState = TvContentState(
+                    key = screenTransitionKey,
+                    page = app.page,
+                    selected = app.selected,
+                    playlist = app.playlistDetail,
+                    artist = app.artistDetail,
+                    home = home,
+                )
+                AnimatedContent(
+                    targetState = contentState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentKey = { it.key },
+                    transitionSpec = {
+                        fadeIn(tween(180, delayMillis = 40, easing = FastOutSlowInEasing)) togetherWith
+                            fadeOut(tween(110, easing = FastOutSlowInEasing))
+                    },
+                    label = "tv-main-content",
+                ) { state ->
+                    val isCurrent = state.key == screenTransitionKey
+                    val currentFocusPage = LocalTvFocusPage.current
+                    CompositionLocalProvider(LocalTvFocusPage provides if (isCurrent) currentFocusPage else "__exiting__:${state.key}") {
+                        Box(if (isCurrent) Modifier.fillMaxSize() else Modifier.fillMaxSize().focusProperties { canFocus = false }) {
+                            if (state.selected != null) Detail(app, songOverride = state.selected)
+                            else if (state.playlist != null) PlaylistDetail(app, playlistSongs, playlistOverride = state.playlist)
+                            else if (state.artist != null) ArtistDetail(app, artistSongs, artistOverride = state.artist)
+                            else when (state.page) {
+                                "首页" -> state.home?.let { homeRoutes ->
+                                    TvHomeScreen(
+                                        app, homeRoutes,
+                                        onSearch = {
+                                            homeSearchOpen = true
+                                            memory.last["找歌"] = "action:$SongSearchHint"
+                                            app.navigate("找歌")
+                                        },
+                                        onPhone = {
+                                            if (!app.online) app.reconnect()
+                                            app.ensureInvitation()
+                                            invitationOpen = true
+                                        },
+                                    )
+                                }
+                                "历史记录", "热门歌曲" -> TvHomeActivityScreen(
+                                    app,
+                                    popular = if (isCurrent) app.page == "热门歌曲" else state.page == "热门歌曲",
+                                    historyState = historySongs,
+                                    popularState = popularSongs,
+                                )
+                                "点歌" -> SongCenter(app)
+                                "找歌" -> Library(app, librarySongs)
+                                "歌单" -> Playlists(app, playlistsGrid)
+                                "歌手" -> Artists(app, artistsGrid)
+                                "分类" -> Categories(app, categoriesGrid, categoryDimension) { categoryDimension = it }
+                                "收藏" -> FavoritesContent(app, Modifier.fillMaxSize())
+                                "已点" -> Queue(app)
+                                "设置" -> Settings(app)
+                            }
+                        }
                     }
                 }
                 if (app.page != "已点") {
                     val compact = app.page == "首页" || (app.page == "点歌" && app.selected == null)
                     SingingBar(app, compact = compact, home = home)
+                }
+                    }
                 }
             }
         }
@@ -846,6 +950,16 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
     )
 }
 
+private fun categoryDimensionLabel(dimension: String): String = when (dimension) {
+    "LANGUAGE" -> "语种"
+    "DECADE" -> "年代"
+    "GENRE" -> "风格"
+    "MOOD" -> "情绪"
+    "SCENE" -> "场景"
+    "CUSTOM" -> "自定义"
+    else -> "语种"
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable private fun Categories(app: TvApp, grid: LazyGridState, dimension: String, onDimensionChange: (String) -> Unit) {
     val dimensions = linkedMapOf("LANGUAGE" to "语种", "DECADE" to "年代", "GENRE" to "风格", "MOOD" to "情绪", "SCENE" to "场景", "CUSTOM" to "自定义")
@@ -891,20 +1005,39 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
             }
             Action("未分类", shape = GlassShape.pill, textSize = 13.sp) { app.openCategory() }
         }
-        val tags = app.tags.filter { it.optString("dimension") == dimension }
-        if (tags.isEmpty()) EmptyState("暂无${dimensions[dimension]}分类", "可以在 NAS 管理页整理歌曲分类。", Modifier.weight(1f))
-        else CompositionLocalProvider(LocalBringIntoViewSpec provides focusScroll) {
-            LazyVerticalGrid(
-                GridCells.Fixed(4),
-                state = grid,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                items(tags, key = { it.getString("id") }) { tag ->
-                    val id = tag.getString("id")
-                    CategoryCard(app, tag, selected = id in app.selectedTags) { app.openCategory(id) }
+        AnimatedContent(
+            targetState = dimension,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            transitionSpec = {
+                fadeIn(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) togetherWith
+                    fadeOut(tween(90, easing = FastOutSlowInEasing))
+            },
+            label = "category-grid",
+        ) { targetDimension ->
+            val focusPage = LocalTvFocusPage.current
+            val activeTabKey = "$focusPage:action:${dimensions.getValue(targetDimension)}"
+            val tags = app.tags.filter { it.optString("dimension") == targetDimension }
+            if (tags.isEmpty()) EmptyState("暂无${dimensions[targetDimension]}分类", "可以在 NAS 管理页整理歌曲分类。", Modifier.fillMaxSize())
+            else CompositionLocalProvider(LocalBringIntoViewSpec provides focusScroll) {
+                LazyVerticalGrid(
+                    GridCells.Fixed(4),
+                    state = if (targetDimension == dimension) grid else rememberLazyGridState(),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    itemsIndexed(tags, key = { _, tag -> tag.getString("id") }) { index, tag ->
+                        val id = tag.getString("id")
+                        CategoryCard(
+                            app,
+                            tag,
+                            selected = id in app.selectedTags,
+                            modifier = if (index < 4) Modifier.focusProperties {
+                                memory.targets[activeTabKey]?.let { up = it }
+                            } else Modifier,
+                        ) { app.openCategory(id) }
+                    }
                 }
             }
         }
@@ -1038,8 +1171,8 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
     }
 }
 
-@Composable private fun PlaylistDetail(app: TvApp, list: LazyListState) {
-    val playlist = app.playlistDetail ?: return
+@Composable private fun PlaylistDetail(app: TvApp, list: LazyListState, playlistOverride: JSONObject? = null) {
+    val playlist = playlistOverride ?: app.playlistDetail ?: return
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 96.dp).glassSurface(TvShape.panel, base = Glass.surfaceCard).padding(14.dp),
@@ -1060,8 +1193,8 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
     }
 }
 
-@Composable private fun ArtistDetail(app: TvApp, list: LazyListState) {
-    val artist = app.artistDetail ?: return
+@Composable private fun ArtistDetail(app: TvApp, list: LazyListState, artistOverride: JSONObject? = null) {
+    val artist = artistOverride ?: app.artistDetail ?: return
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.fillMaxWidth().heightIn(min = 98.dp).clip(TvShape.panel).glassSurface(TvShape.panel, base = Glass.surfaceCard)) {
             ArtistArtwork(app, artist, "background", Modifier.matchParentSize())
@@ -1082,8 +1215,8 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
     }
 }
 
-@Composable private fun Detail(app: TvApp) {
-    val song = app.selected ?: return
+@Composable private fun Detail(app: TvApp, songOverride: JSONObject? = null) {
+    val song = songOverride ?: app.selected ?: return
     fun field(name: String) = song.optString(name).takeIf { it.isNotBlank() && it != "null" }
     val album = listOfNotNull(field("album"), field("releaseDate")).joinToString(" · ")
     val coverShape = RoundedCornerShape(18.dp)
@@ -1476,29 +1609,40 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
         }
     }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        val settingsGroups = remember { listOf("连接", "播放设置", "聚会管理", "本场参与者", "设备信息", "应用更新") }
         Column(
             Modifier
                 .width(196.dp)
                 .padding(top = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            listOf("连接", "播放设置", "聚会管理", "本场参与者", "设备信息", "应用更新").forEach { label ->
+            settingsGroups.forEach { label ->
                 SettingsMenuItem(label, active = label == group) { group = label }
             }
         }
         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopStart) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
-                    .tvScreenEnter(group)
-                    .glassSurface(TvShape.panel, base = Glass.surfaceCard, elevation = 4.dp)
-                    .clip(TvShape.panel)
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                when (group) {
+            AnimatedContent(
+                targetState = group,
+                modifier = Modifier.fillMaxWidth(),
+                transitionSpec = {
+                    fadeIn(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) togetherWith
+                        fadeOut(tween(90, easing = FastOutSlowInEasing))
+                },
+                label = "settings-panel",
+            ) { targetGroup ->
+                val isCurrent = targetGroup == group
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .then(if (isCurrent) Modifier else Modifier.focusProperties { canFocus = false })
+                        .glassSurface(TvShape.panel, base = Glass.surfaceCard, elevation = 4.dp)
+                        .clip(TvShape.panel)
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    when (targetGroup) {
                     "连接" -> {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1743,9 +1887,19 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
                     }
                 }
             }
+            }
         }
     }
 }
+
+private data class TvContentState(
+    val key: String,
+    val page: String,
+    val selected: JSONObject?,
+    val playlist: JSONObject?,
+    val artist: JSONObject?,
+    val home: TvHomeFocusRoutes?,
+)
 
 @Composable private fun UpdateMetaTile(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
@@ -1762,6 +1916,7 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
 
 @Composable private fun SettingsMenuItem(label: String, active: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val memory = LocalTvFocusMemory.current
     val shape = TvShape.control
     Button(
         onClick = onClick,
@@ -1769,7 +1924,10 @@ private const val SongSearchHint = "搜索歌名、歌手、拼音或编号"
             .fillMaxWidth()
             .height(44.dp)
             .tvFocusTarget("action:$label")
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused && memory.directionalInput && !memory.restoring && memory.activeDialogs == 0) onClick()
+            }
             .tvSpringFocus(focused, scaleTarget = 1.035f, liftDp = 0.8.dp)
             .then(
                 when {

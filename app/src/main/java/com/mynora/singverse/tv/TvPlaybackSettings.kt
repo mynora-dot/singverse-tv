@@ -1,7 +1,14 @@
 package com.mynora.singverse.tv
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -82,17 +89,23 @@ private val PlaybackSettingTabs = listOf(
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
-        key(tab, audioOnly) {
+        AnimatedContent(
+            targetState = tab,
+            modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
+            transitionSpec = {
+                fadeIn(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) togetherWith
+                    fadeOut(tween(90, easing = FastOutSlowInEasing))
+            },
+            label = "playback-settings-tab",
+        ) { targetTab ->
+            val isCurrent = targetTab == tab
             LazyColumn(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .fillMaxWidth()
-                    .tvScreenEnter(tab),
+                modifier = if (isCurrent) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().focusProperties { canFocus = false },
                 state = rememberLazyListState(),
                 contentPadding = PaddingValues(top = 2.dp, bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                when (tab) {
+                when (targetTab) {
                     "音轨" -> audioTrackSettings(app)
                     "歌词字幕" -> textTrackSettings(app)
                     "声音输出" -> outputSettings(app)
@@ -270,6 +283,7 @@ private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val memory = LocalTvFocusMemory.current
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val shape = GlassShape.pill
     Button(
@@ -277,7 +291,10 @@ private fun LazyListScope.synchronizationSettings(app: TvApp, audioOnly: Boolean
         modifier = modifier
             .height(34.dp)
             .tvFocusTarget("action:$focusKey")
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused && memory.directionalInput && !memory.restoring) onClick()
+            }
             .tvSpringFocus(focused && windowFocused, scaleTarget = 1.04f, liftDp = 0.5.dp)
             .then(
                 when {

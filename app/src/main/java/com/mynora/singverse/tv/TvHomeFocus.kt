@@ -23,8 +23,7 @@ internal class TvHomeFocusMemory {
 
     private val centers = mutableMapOf<String, Float>()
     val lastSong = mutableMapOf<HomeShelf, Song>()
-    var historyFavoriteOrigin: String? = null
-        private set
+    var activeLowerShelf: HomeShelf = HomeShelf.HISTORY
     var bottomOrigin: String? = null
         private set
     var shelfDivider: Float? = null
@@ -45,12 +44,15 @@ internal class TvHomeFocusMemory {
         val shelf = HomeShelf.entries.firstOrNull { it.contains(key) }
         if (shelf != null) {
             if (shelf.isSong(key)) lastSong[shelf] = Song(key, center(key))
-            val returningFromBottom = previous?.startsWith("bar:") == true && shelf.contains(bottomOrigin)
-            if (shelf == HomeShelf.HISTORY && !shelf.contains(previous) && !returningFromBottom) {
-                historyFavoriteOrigin = previous?.takeIf { HomeShelf.FAVORITES.isSong(it) }
-            }
+            if (shelf == HomeShelf.HISTORY || shelf == HomeShelf.POPULAR) activeLowerShelf = shelf
+        } else if (key == "tab:history") {
+            activeLowerShelf = HomeShelf.HISTORY
+        } else if (key == "tab:popular") {
+            activeLowerShelf = HomeShelf.POPULAR
         } else if (key.startsWith("bar:") && previous?.startsWith("bar:") != true) {
-            bottomOrigin = previous?.takeIf { HomeShelf.HISTORY.contains(it) || HomeShelf.POPULAR.contains(it) }
+            bottomOrigin = previous?.takeIf {
+                HomeShelf.HISTORY.contains(it) || HomeShelf.POPULAR.contains(it) || it == "phone"
+            }
         }
     }
 }
@@ -72,7 +74,6 @@ internal class TvHomeFocusRoutes(
         availability.keys.filter { shelf.isSong(it) && availability[it] == true }
     }
     private val favoriteKeys = playable.getValue(HomeShelf.FAVORITES)
-    private val lowerKeys = playable.getValue(HomeShelf.HISTORY) + playable.getValue(HomeShelf.POPULAR)
 
     fun target(key: String?) = key?.let { memory.targets["首页:$it"] } ?: FocusRequester.Cancel
 
@@ -88,61 +89,121 @@ internal class TvHomeFocusRoutes(
         this.down = target(down())
     }
 
-    fun navigationEntry() = rememberedSong(HomeShelf.FAVORITES) ?: favoriteKeys.firstOrNull() ?: "search"
+    fun navigationEntry() = rememberedSong(HomeShelf.FAVORITES)
+        ?: favoriteKeys.firstOrNull()
+        ?: if (hasRetry(HomeShelf.FAVORITES)) HomeShelf.FAVORITES.retry else "phone"
 
     fun unavailableSong(key: String?) = HomeShelf.entries.any { it.isSong(key) } && availability[key] != true
 
-    fun collectionHeading() = links(
-        left = { if (hasRetry(HomeShelf.FAVORITES)) HomeShelf.FAVORITES.retry else null },
-        right = { "phone" },
-        up = { "nav:首页" },
-        down = { rememberedSong(HomeShelf.FAVORITES) ?: favoriteKeys.lastOrNull() ?: "search" },
-    )
+    private fun activeLowerShelf(): HomeShelf =
+        if (home.activeLowerShelf == HomeShelf.POPULAR) HomeShelf.POPULAR else HomeShelf.HISTORY
+
+    private fun activeTabKey(): String =
+        if (activeLowerShelf() == HomeShelf.POPULAR) "tab:popular" else "tab:history"
 
     fun favoriteSong(key: String) = links(
         left = { neighbor(favoriteKeys, key, -1) },
         right = { neighbor(favoriteKeys, key, 1) ?: "search" },
-        up = { HomeShelf.FAVORITES.all },
-        down = { belowFavorite(key) },
+        up = { "nav:首页" },
+        down = {
+            val idx = favoriteKeys.indexOf(key)
+            when {
+                idx <= 1 -> activeTabKey()
+                idx == 2 -> "tab:popular"
+                else -> activeLowerShelf().all
+            }
+        },
     )
 
-    fun phone() = links(left = { HomeShelf.FAVORITES.all }, up = { "nav:首页" }, down = { "search" })
-
     fun search() = links(
-        left = { favoriteKeys.lastOrNull() ?: HomeShelf.FAVORITES.all },
-        up = { "phone" },
-        down = { HomeShelf.POPULAR.all },
+        left = { favoriteKeys.lastOrNull() ?: if (hasRetry(HomeShelf.FAVORITES)) HomeShelf.FAVORITES.retry else null },
+        up = { "nav:首页" },
+        down = { HomeShelf.FAVORITES.all },
+    )
+
+    fun collectionDock() = links(
+        left = { favoriteKeys.lastOrNull() ?: if (hasRetry(HomeShelf.FAVORITES)) HomeShelf.FAVORITES.retry else null },
+        up = { "search" },
+        down = { "phone" },
+    )
+
+    fun phone() = links(
+        left = {
+            val shelf = activeLowerShelf()
+            val keys = playable.getValue(shelf)
+            keys.getOrNull(3) ?: keys.getOrNull(1) ?: keys.lastOrNull() ?: if (hasRetry(shelf)) shelf.retry else shelf.all
+        },
+        up = { HomeShelf.FAVORITES.all },
+        down = { "bar:queue" },
+    )
+
+    fun lowerTab(shelf: HomeShelf) = links(
+        left = { if (shelf == HomeShelf.POPULAR) "tab:history" else null },
+        right = { if (shelf == HomeShelf.HISTORY) "tab:popular" else activeLowerShelf().all },
+        up = {
+            rememberedSong(HomeShelf.FAVORITES)
+                ?: favoriteKeys.firstOrNull()
+                ?: if (hasRetry(HomeShelf.FAVORITES)) HomeShelf.FAVORITES.retry else "nav:首页"
+        },
+        down = {
+            val active = activeLowerShelf()
+            val keys = playable.getValue(active)
+            keys.firstOrNull() ?: if (hasRetry(active)) active.retry else "bar:queue"
+        },
     )
 
     fun activityHeading(shelf: HomeShelf) = links(
-        left = { HomeShelf.HISTORY.all.takeIf { shelf == HomeShelf.POPULAR } },
-        right = { HomeShelf.POPULAR.all.takeIf { shelf == HomeShelf.HISTORY } },
-        up = {
-            if (shelf == HomeShelf.POPULAR) {
-                "search"
-            } else {
-                home.historyFavoriteOrigin?.takeIf { it in favoriteKeys }
-                    ?: nearest(HomeShelf.FAVORITES, home.center(shelf.all))
-                    ?: "nav:首页"
-            }
-        },
+        left = { "tab:popular" },
+        right = { "phone" },
+        up = { favoriteKeys.lastOrNull() ?: rememberedSong(HomeShelf.FAVORITES) ?: "nav:首页" },
         down = {
-            rememberedSong(shelf) ?: nearest(shelf, home.center(shelf.all))
-                ?: if (hasRetry(shelf)) shelf.retry else "bar:queue"
+            val keys = playable.getValue(shelf)
+            keys.getOrNull(1) ?: keys.firstOrNull() ?: if (hasRetry(shelf)) shelf.retry else "bar:queue"
         },
     )
 
     fun activitySong(shelf: HomeShelf, key: String) = links(
-        left = { neighbor(lowerKeys, key, -1) },
-        right = { neighbor(lowerKeys, key, 1) },
-        up = { shelf.all },
-        down = { "bar:queue" },
+        left = {
+            val keys = playable.getValue(shelf)
+            val idx = keys.indexOf(key)
+            if (idx == 1 || idx == 3) keys.getOrNull(idx - 1) else null
+        },
+        right = {
+            val keys = playable.getValue(shelf)
+            val idx = keys.indexOf(key)
+            when (idx) {
+                0 -> keys.getOrNull(1) ?: "phone"
+                1 -> "phone"
+                2 -> keys.getOrNull(3) ?: "phone"
+                else -> "phone"
+            }
+        },
+        up = {
+            val keys = playable.getValue(shelf)
+            val idx = keys.indexOf(key)
+            when (idx) {
+                0 -> activeTabKey()
+                1 -> shelf.all
+                2 -> keys.getOrNull(0) ?: activeTabKey()
+                3 -> keys.getOrNull(1) ?: shelf.all
+                else -> activeTabKey()
+            }
+        },
+        down = {
+            val keys = playable.getValue(shelf)
+            val idx = keys.indexOf(key)
+            when (idx) {
+                0 -> keys.getOrNull(2) ?: "bar:queue"
+                1 -> keys.getOrNull(3) ?: keys.getOrNull(2) ?: "bar:queue"
+                else -> "bar:queue"
+            }
+        },
     )
 
     fun retry(shelf: HomeShelf) = links(
-        right = { "search".takeIf { shelf == HomeShelf.FAVORITES } },
-        up = { shelf.all },
-        down = { if (shelf == HomeShelf.FAVORITES) belowFavorite(shelf.retry) else "bar:queue" },
+        right = { if (shelf == HomeShelf.FAVORITES) "phone" else HomeShelf.FAVORITES.all },
+        up = { if (shelf == HomeShelf.FAVORITES) "nav:首页" else activeTabKey() },
+        down = { if (shelf == HomeShelf.FAVORITES) activeTabKey() else "bar:queue" },
     )
 
     fun bottom(keys: List<String>, key: String) = links(
@@ -150,12 +211,13 @@ internal class TvHomeFocusRoutes(
         right = { neighbor(keys, key, 1) },
         up = {
             home.bottomOrigin?.let { restoredEntry(it) }
-                ?: playable.getValue(HomeShelf.POPULAR).lastOrNull()
-                ?: HomeShelf.POPULAR.all
+                ?: playable.getValue(activeLowerShelf()).lastOrNull()
+                ?: HomeShelf.FAVORITES.all
         },
     )
 
     fun restoredEntry(key: String): String? {
+        if (key == "phone" || key == HomeShelf.FAVORITES.all) return key
         val shelf = HomeShelf.entries.firstOrNull { it.contains(key) }
         return when {
             shelf?.isSong(key) == true ->
@@ -173,14 +235,8 @@ internal class TvHomeFocusRoutes(
 
     private fun nearest(shelf: HomeShelf, center: Float?): String? {
         val keys = playable.getValue(shelf)
-        if (center == null) return keys.lastOrNull()
+        if (center == null) return keys.firstOrNull()
         return keys.minByOrNull { key -> home.center(key)?.let { abs(it - center) } ?: Float.MAX_VALUE }
-    }
-
-    private fun belowFavorite(key: String): String {
-        val center = home.center(key)
-        val shelf = if (center != null && center >= (home.shelfDivider ?: Float.MAX_VALUE)) HomeShelf.POPULAR else HomeShelf.HISTORY
-        return nearest(shelf, center) ?: shelf.all
     }
 
     private fun hasRetry(shelf: HomeShelf) = memory.targets.containsKey("首页:${shelf.retry}")

@@ -1,7 +1,14 @@
 package com.mynora.singverse.tv
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -14,6 +21,7 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -32,19 +40,18 @@ import org.json.JSONObject
 @Composable internal fun TvHomeScreen(app: TvApp, focus: TvHomeFocusRoutes, onSearch: () -> Unit, onPhone: () -> Unit) {
     val favorites = focus.favorites
     val memory = LocalTvFocusMemory.current
+    var lowerShelf by remember { mutableStateOf(memory.home.activeLowerShelf.takeIf { it == HomeShelf.POPULAR } ?: HomeShelf.HISTORY) }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val lowerHeight = (maxHeight * 0.39f).coerceIn(138.dp, 158.dp)
-        val upperHeight = (maxHeight - lowerHeight - 16.dp).coerceAtLeast(190.dp)
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(Modifier.height(upperHeight).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        val lowerHeight = 160.dp
+        val upperHeight = (maxHeight - lowerHeight - 14.dp).coerceAtLeast(196.dp)
+        val rightWidth = 160.dp
+
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // UPPER BAND: 4 Monumental Square Favorite Covers + Pixel-Aligned Search & All Favorites
+            Row(Modifier.height(upperHeight).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HomeSectionHeading(
-                        "我的收藏",
-                        "全部收藏",
-                        HomeShelf.FAVORITES.all,
-                        titleSize = 18.sp,
-                        actionModifier = focus.collectionHeading(),
-                    ) { app.navigate("收藏") }
+                    Text("我的收藏", color = Paper, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
                     if (favorites.isEmpty()) HomeSectionState(
                         Modifier.weight(1f), app.favoritesLoading, app.favoritesReady, app.favoritesError,
                         "还没有收藏歌曲", "在手机、后台添加，或播放时按「收藏」。", HomeShelf.FAVORITES.retry,
@@ -53,8 +60,9 @@ import org.json.JSONObject
                         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                             val landscape = favorites.size <= 2
                             val columns = if (landscape) favorites.size else 4
-                            val width = (maxWidth - 14.dp * (columns - 1)) / columns
-                            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            val gap = 14.dp
+                            val slotWidth = (maxWidth - gap * (columns - 1)) / columns
+                            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                                 favorites.forEach { song ->
                                     val id = song.getString("id")
                                     key(id) {
@@ -63,7 +71,7 @@ import org.json.JSONObject
                                             song,
                                             landscape,
                                             Modifier
-                                                .width(width)
+                                                .width(slotWidth)
                                                 .fillMaxHeight()
                                                 .then(focus.favoriteSong(HomeShelf.FAVORITES.song(id))),
                                         )
@@ -74,119 +82,407 @@ import org.json.JSONObject
                         if (app.favoritesError.isNotBlank()) HomeStaleNotice("收藏更新失败，可在全部收藏中重试")
                     }
                 }
-                Column(Modifier.width(196.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PhoneConnectionCard(
-                        app,
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .then(focus.phone()),
-                        onPhone,
-                    )
-                    HomeTile(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(40.dp)
-                            .then(focus.search())
-                            .tvFocusTarget("search"),
-                        shape = GlassShape.pill,
+                // Upper-Right Action Group: top & bottom aligned pixel-for-pixel with the 4 album covers
+                Column(
+                    Modifier
+                        .width(rightWidth)
+                        .fillMaxHeight()
+                        .padding(top = 35.dp, bottom = 44.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    HomeDockPill(
+                        icon = "search",
+                        label = "搜索歌曲",
+                        subtitle = "歌名 · 歌手 · 拼音",
+                        accent = Brand,
+                        focusKey = "search",
+                        modifier = Modifier.weight(1f).then(focus.search()),
                         onClick = onSearch,
-                    ) { tileFocused ->
+                    )
+                    HomeDockPill(
+                        icon = "playlist",
+                        label = "全部收藏",
+                        subtitle = if (app.favoriteSongs().isNotEmpty()) "${app.favoriteSongs().size} 首收藏歌曲" else "查看收藏列表",
+                        accent = Accent,
+                        focusKey = HomeShelf.FAVORITES.all,
+                        modifier = Modifier.weight(1f).then(focus.collectionDock()),
+                        onClick = { app.navigate("收藏") },
+                    )
+                }
+            }
+
+            // LOWER BAND: 2x2 Horizontal Song Cards + Exact 1:1 Pure Square QR Card
+            Row(Modifier.height(lowerHeight).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().height(28.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Row(
-                            Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                            Modifier
+                                .clip(GlassShape.pill)
+                                .background(Color(0x0FFFFFFF))
+                                .border(1.dp, Color(0x14FFFFFF), GlassShape.pill)
+                                .padding(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                         ) {
-                            HomeGlyph("search", Modifier.size(15.dp), if (tileFocused) Glass.champagneBright else Muted)
-                            Text("搜索歌曲", color = if (tileFocused) Paper else Paper.copy(alpha = 0.90f), fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            HomeShelfTab(
+                                label = "历史记录",
+                                focusKey = "tab:history",
+                                selected = lowerShelf == HomeShelf.HISTORY,
+                                modifier = focus.lowerTab(HomeShelf.HISTORY),
+                                onFocus = {
+                                    if (memory.directionalInput && memory.activeDialogs == 0) {
+                                        lowerShelf = HomeShelf.HISTORY
+                                        memory.home.activeLowerShelf = HomeShelf.HISTORY
+                                    }
+                                },
+                            ) {
+                                lowerShelf = HomeShelf.HISTORY
+                                memory.home.activeLowerShelf = HomeShelf.HISTORY
+                            }
+                            HomeShelfTab(
+                                label = "热门歌曲",
+                                focusKey = "tab:popular",
+                                selected = lowerShelf == HomeShelf.POPULAR,
+                                modifier = focus.lowerTab(HomeShelf.POPULAR),
+                                onFocus = {
+                                    if (memory.directionalInput && memory.activeDialogs == 0) {
+                                        lowerShelf = HomeShelf.POPULAR
+                                        memory.home.activeLowerShelf = HomeShelf.POPULAR
+                                    }
+                                },
+                            ) {
+                                lowerShelf = HomeShelf.POPULAR
+                                memory.home.activeLowerShelf = HomeShelf.POPULAR
+                            }
+                        }
+                        HomeMorePill(
+                            label = "查看全部",
+                            focusKey = lowerShelf.all,
+                            modifier = focus.activityHeading(lowerShelf),
+                        ) {
+                            app.navigate(if (lowerShelf == HomeShelf.POPULAR) "热门歌曲" else "历史记录")
+                        }
+                    }
+                    AnimatedContent(
+                        targetState = lowerShelf,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        transitionSpec = {
+                            fadeIn(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) togetherWith
+                                fadeOut(tween(90, easing = FastOutSlowInEasing))
+                        },
+                        label = "home-lower-shelf",
+                    ) { targetShelf ->
+                        val isCurrent = targetShelf == lowerShelf
+                        val shelfSongs = if (targetShelf == HomeShelf.POPULAR) focus.popular else focus.history
+                        val containerMod = if (isCurrent) Modifier.fillMaxSize() else Modifier.fillMaxSize().focusProperties { canFocus = false }
+                        CompositionLocalProvider(LocalTvFocusPage provides if (isCurrent) LocalTvFocusPage.current else "__exiting__:${targetShelf.name}") {
+                            Box(containerMod) {
+                                if (shelfSongs.isEmpty()) {
+                                    if (targetShelf == HomeShelf.POPULAR) HomeSectionState(
+                                        Modifier.fillMaxSize(), app.homePopularLoading, app.homePopularReady, app.homePopularError,
+                                        "近 30 天暂无热门歌曲", "有播放记录后，按曲库热度排序。", HomeShelf.POPULAR.retry,
+                                        app::refreshHomePopular, retryModifier = focus.retry(HomeShelf.POPULAR),
+                                    ) else HomeSectionState(
+                                        Modifier.fillMaxSize(), app.homeHistoryLoading, app.homeHistoryReady, app.homeHistoryError,
+                                        "还没有播放记录", "唱过的歌曲会出现在这里。", HomeShelf.HISTORY.retry,
+                                        app::refreshHomeHistory, retryModifier = focus.retry(HomeShelf.HISTORY),
+                                    )
+                                } else {
+                                    HomeActivityGrid(app, shelfSongs, targetShelf, focus, Modifier.fillMaxSize())
+                                }
+                            }
                         }
                     }
                 }
-            }
-            Row(Modifier.height(lowerHeight).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val shelf = HomeShelf.HISTORY
-                    HomeSectionHeading("历史记录", "查看全部", shelf.all, actionModifier = focus.activityHeading(shelf)) {
-                        app.navigate("历史记录")
-                    }
-                    if (focus.history.isEmpty()) HomeSectionState(
-                        Modifier.weight(1f), app.homeHistoryLoading, app.homeHistoryReady, app.homeHistoryError,
-                        "还没有播放记录", "唱过的歌曲会出现在这里。", shelf.retry,
-                        app::refreshHomeHistory, retryModifier = focus.retry(shelf),
-                    ) else Column(Modifier.weight(1f)) {
-                        HomeCoverShelfRow(app, focus.history, shelf, focus, Modifier.weight(1f))
-                        if (app.homeHistoryError.isNotBlank()) HomeStaleNotice("记录更新失败，可查看全部后重试")
-                    }
-                }
-                Box(
-                    Modifier.width(1.dp).fillMaxHeight()
-                        .onGloballyPositioned { memory.home.shelfDivider = it.positionInRoot().x }
-                        .padding(vertical = 8.dp).background(Color(0x14FFFFFF)),
+                // Lower-Right Pure Square QR Card (top flush with tab bar, bottom flush with Row 2B)
+                PhoneConnectionCard(
+                    app,
+                    Modifier
+                        .size(rightWidth, lowerHeight)
+                        .then(focus.phone()),
+                    onPhone,
                 )
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val shelf = HomeShelf.POPULAR
-                    HomeSectionHeading("热门歌曲", "查看全部", shelf.all, actionModifier = focus.activityHeading(shelf)) {
-                        app.navigate("热门歌曲")
-                    }
-                    if (focus.popular.isEmpty()) HomeSectionState(
-                        Modifier.weight(1f), app.homePopularLoading, app.homePopularReady, app.homePopularError,
-                        "近 30 天暂无热门歌曲", "有播放记录后，按曲库热度排序。", shelf.retry,
-                        app::refreshHomePopular, retryModifier = focus.retry(shelf),
-                    ) else Column(Modifier.weight(1f)) {
-                        HomeCoverShelfRow(app, focus.popular, shelf, focus, Modifier.weight(1f))
-                        if (app.homePopularError.isNotBlank()) HomeStaleNotice("热门更新失败，可查看全部后重试")
-                    }
-                }
             }
         }
     }
 }
 
-@Composable private fun HomeSectionHeading(
-    title: String,
-    more: String,
+@Composable private fun HomeActivityGrid(
+    app: TvApp,
+    songs: List<JSONObject>,
+    shelf: HomeShelf,
+    focus: TvHomeFocusRoutes,
+    modifier: Modifier = Modifier,
+) {
+    val row1 = songs.take(2)
+    val row2 = songs.drop(2).take(2)
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            row1.forEachIndexed { idx, song ->
+                val id = song.optString("id")
+                val focusKey = shelf.song(id)
+                key(id) {
+                    HomeHorizontalSongCard(
+                        app = app,
+                        song = song,
+                        rank = idx + 1,
+                        focusKey = focusKey,
+                        modifier = Modifier.weight(1f).fillMaxHeight().then(focus.activitySong(shelf, focusKey)),
+                    )
+                }
+            }
+            if (row1.size == 1) Spacer(Modifier.weight(1f))
+        }
+        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            row2.forEachIndexed { idx, song ->
+                val id = song.optString("id")
+                val focusKey = shelf.song(id)
+                key(id) {
+                    HomeHorizontalSongCard(
+                        app = app,
+                        song = song,
+                        rank = idx + 3,
+                        focusKey = focusKey,
+                        modifier = Modifier.weight(1f).fillMaxHeight().then(focus.activitySong(shelf, focusKey)),
+                    )
+                }
+            }
+            if (row2.size == 1) Spacer(Modifier.weight(1f))
+            if (row2.isEmpty()) Spacer(Modifier.fillMaxSize())
+        }
+    }
+}
+
+@Composable private fun HomeHorizontalSongCard(
+    app: TvApp,
+    song: JSONObject,
+    rank: Int?,
     focusKey: String,
-    icon: String? = null,
-    subtitle: String = "",
-    titleSize: TextUnit = 16.5.sp,
-    actionModifier: Modifier = Modifier,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val available = song.optBoolean("available", true)
+    val shape = TvShape.control
+    Button(
+        onClick = { app.openSong(song) },
+        enabled = available,
+        modifier = modifier
+            .tvFocusTarget(focusKey)
+            .onFocusChanged { focused = it.isFocused }
+            .tvSpringFocus(focused && available, scaleTarget = 1.022f, liftDp = 0.8.dp)
+            .then(
+                if (focused) Modifier.tvPlatinumFocus(true, shape)
+                else Modifier.clip(shape).background(Color(0x0DFFFFFF))
+            ),
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        shape = ButtonDefaults.shape(shape),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+        colors = ButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = Paper,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = Glass.focusInk,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = Muted,
+        ),
+    ) {
+        Row(
+            Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (rank != null) {
+                Text(
+                    "0$rank",
+                    color = when {
+                        focused -> Glass.focusInk
+                        rank == 1 -> Brand
+                        else -> Muted
+                    },
+                    fontSize = 12.5.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.width(20.dp),
+                )
+            }
+            SongArtwork(app, song, Modifier.size(38.dp).alpha(if (available) 1f else .45f), shape = RoundedCornerShape(8.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    song.optString("title"),
+                    color = if (focused) Glass.focusInk else if (available) Paper else Muted,
+                    fontSize = 13.5.sp,
+                    lineHeight = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    song.artists(),
+                    color = if (focused) Glass.focusInkMuted else Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            HomeGlyph("chevron", Modifier.size(11.dp), if (focused) Glass.focusInkMuted else Muted.copy(alpha = 0.55f))
+        }
+    }
+}
+
+@Composable private fun HomeShelfTab(
+    label: String,
+    focusKey: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onFocus: () -> Unit,
     onClick: () -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth().height(28.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (icon != null) HomeGlyph(icon, Modifier.size(14.dp), Brand)
-        Text(title, color = Paper, fontSize = titleSize, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
-        if (subtitle.isNotEmpty()) Text(subtitle, color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
-        Spacer(Modifier.weight(1f))
-        var focused by remember { mutableStateOf(false) }
-        Button(
-            onClick,
-            actionModifier
-                .height(24.dp)
-                .tvFocusTarget(focusKey)
-                .onFocusChanged { focused = it.isFocused }
-                .tvSpringFocus(focused, scaleTarget = 1.04f, liftDp = 0.5.dp)
-                .then(
-                    if (focused) Modifier.glassSurface(GlassShape.pill, highlighted = true, base = Glass.surfaceFocus)
-                    else Modifier
-                )
-                .tvFocus(focused, GlassShape.pill),
-            scale = ButtonDefaults.scale(focusedScale = 1f),
-            shape = ButtonDefaults.shape(GlassShape.pill),
-            contentPadding = PaddingValues(horizontal = 8.dp),
-            colors = ButtonDefaults.colors(
-                containerColor = Color.Transparent,
-                contentColor = Muted.copy(alpha = 0.72f),
-                focusedContainerColor = Color.Transparent,
-                focusedContentColor = Paper,
+    var focused by remember { mutableStateOf(false) }
+    val shape = GlassShape.pill
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .height(26.dp)
+            .tvFocusTarget(focusKey)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocus()
+            }
+            .tvSpringFocus(focused, scaleTarget = 1.04f, liftDp = 0.5.dp)
+            .then(
+                when {
+                    focused -> Modifier.tvPlatinumFocus(true, shape)
+                    selected -> Modifier.clip(shape).background(Color(0x1EFFFFFF))
+                    else -> Modifier
+                }
             ),
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        shape = ButtonDefaults.shape(shape),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+        colors = ButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = if (selected) Paper else Glass.inkSecondary,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = Glass.focusInk,
+        ),
+    ) {
+        Text(
+            label,
+            fontSize = 12.5.sp,
+            lineHeight = 16.sp,
+            fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable private fun HomeMorePill(
+    label: String,
+    focusKey: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = GlassShape.pill
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .height(26.dp)
+            .tvFocusTarget(focusKey)
+            .onFocusChanged { focused = it.isFocused }
+            .tvSpringFocus(focused, scaleTarget = 1.04f, liftDp = 0.5.dp)
+            .then(if (focused) Modifier.tvPlatinumFocus(true, shape) else Modifier),
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        shape = ButtonDefaults.shape(shape),
+        contentPadding = PaddingValues(horizontal = 10.dp),
+        colors = ButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = Muted.copy(alpha = 0.80f),
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = Glass.focusInk,
+        ),
+    ) {
+        Text(label, fontSize = 11.5.sp, lineHeight = 15.sp, fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium)
+        Spacer(Modifier.width(3.dp))
+        HomeGlyph("chevron", Modifier.size(10.dp), if (focused) Glass.focusInk else Muted.copy(alpha = 0.80f))
+    }
+}
+
+@Composable private fun HomeDockPill(
+    icon: String,
+    label: String,
+    subtitle: String,
+    accent: Color,
+    focusKey: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .tvFocusTarget(focusKey)
+            .onFocusChanged { focused = it.isFocused }
+            .tvSpringFocus(focused, scaleTarget = 1.035f, liftDp = 1.dp)
+            .then(
+                if (focused) Modifier.tvPlatinumFocus(true, shape)
+                else Modifier.glassSurface(shape, highlighted = false, base = Glass.surfaceCard, elevation = 3.dp)
+            ),
+        scale = ButtonDefaults.scale(focusedScale = 1f),
+        shape = ButtonDefaults.shape(shape),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        colors = ButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = Paper,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = Glass.focusInk,
+        ),
+    ) {
+        Row(
+            Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(more, fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.width(3.dp))
-            HomeGlyph("chevron", Modifier.size(10.dp), if (focused) Paper else Muted.copy(alpha = 0.72f))
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (focused) Glass.focusInk.copy(alpha = 0.10f) else accent.copy(alpha = 0.18f))
+                    .border(
+                        1.dp,
+                        if (focused) Glass.focusInk.copy(alpha = 0.14f) else accent.copy(alpha = 0.30f),
+                        RoundedCornerShape(10.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                HomeGlyph(icon, Modifier.size(15.dp), if (focused) Glass.focusInk else accent)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    label,
+                    color = if (focused) Glass.focusInk else Paper,
+                    fontSize = 13.5.sp,
+                    lineHeight = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    subtitle,
+                    color = if (focused) Glass.focusInkMuted else Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -257,7 +553,7 @@ import org.json.JSONObject
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val gap = 12.dp
+        val gap = 14.dp
         val tileWidth = ((maxWidth - gap * 3) / 4f).coerceAtLeast(1.dp)
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
             songs.forEach { song ->
@@ -277,14 +573,14 @@ import org.json.JSONObject
 @Composable private fun HomeShelfCoverTile(app: TvApp, song: JSONObject, focusKey: String, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
     val available = song.optBoolean("available", true)
-    val coverShape = RoundedCornerShape(11.dp)
+    val coverShape = RoundedCornerShape(14.dp)
     Button(
         onClick = { app.openSong(song) },
         enabled = available,
         modifier = modifier
             .tvFocusTarget(focusKey)
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused && available, scaleTarget = 1.055f, liftDp = 1.5.dp),
+            .tvSpringFocus(focused && available, scaleTarget = 1.05f, liftDp = 1.5.dp),
         scale = ButtonDefaults.scale(focusedScale = 1f),
         contentPadding = PaddingValues(3.dp),
         shape = ButtonDefaults.shape(coverShape),
@@ -297,9 +593,9 @@ import org.json.JSONObject
             disabledContentColor = Muted,
         ),
     ) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val coverSize = minOf(maxWidth, maxHeight - 38.dp).coerceAtLeast(48.dp)
-            Column(Modifier.fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
+            val coverSize = minOf(maxWidth, maxHeight - 44.dp).coerceAtLeast(56.dp)
+            Column(Modifier.fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Box(Modifier.size(coverSize).alpha(if (available) 1f else .45f).tvFocus(focused, coverShape)) {
                     SongArtwork(app, song, Modifier.fillMaxSize(), shape = coverShape)
                 }
@@ -307,8 +603,8 @@ import org.json.JSONObject
                     Text(
                         song.optString("title"),
                         color = if (available) Paper else Muted,
-                        fontSize = 11.5.sp,
-                        lineHeight = 15.sp,
+                        fontSize = 13.5.sp,
+                        lineHeight = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -316,8 +612,8 @@ import org.json.JSONObject
                     Text(
                         song.artists(),
                         color = Muted,
-                        fontSize = 10.sp,
-                        lineHeight = 14.sp,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -522,36 +818,34 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
             focusedContentColor = Paper,
         ),
     ) {
-        Column(
-            Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+        BoxWithConstraints(
+            Modifier.fillMaxSize().padding(10.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Text("手机点歌", color = Paper, fontSize = 14.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val qrSize = minOf(maxWidth, maxHeight).coerceAtLeast(96.dp)
-                Box(
-                    Modifier
-                        .size(qrSize)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White)
-                        .padding(6.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (app.invitation.isNotEmpty() && app.online) Qr(app.invitation, Modifier.fillMaxSize())
-                    else Text(
-                        if (app.snapshot.optString("status") == "ENDED") "本场已结束" else if (app.invitationLoading) "生成中…" else "确认以重试",
-                        color = Ink,
-                        fontSize = 11.sp,
-                    )
-                }
+            val qrSize = minOf(maxWidth, maxHeight).coerceAtLeast(96.dp)
+            Box(
+                Modifier
+                    .size(qrSize)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White)
+                    .padding(6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (app.invitation.isNotEmpty() && app.online) Qr(app.invitation, Modifier.fillMaxSize())
+                else Text(
+                    if (app.snapshot.optString("status") == "ENDED") "本场已结束" else if (app.invitationLoading) "生成中…" else "确认以重试",
+                    color = Ink,
+                    fontSize = 11.sp,
+                )
             }
         }
     }
 }
 
 @Composable internal fun TvNavigation(label: String, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
+    val memory = LocalTvFocusMemory.current
     var focused by remember { mutableStateOf(false) }
+    val showFocus = focused && !memory.restoring
     val shape = GlassShape.pill
     Button(
         onClick,
@@ -559,10 +853,10 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
             .height(32.dp)
             .semantics { this.selected = selected; stateDescription = if (selected) "当前页面" else "" }
             .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.045f, liftDp = 0.5.dp)
+            .tvSpringFocus(showFocus, scaleTarget = 1.045f, liftDp = 0.5.dp)
             .then(
                 when {
-                    focused -> Modifier.tvPlatinumFocus(true, shape)
+                    showFocus -> Modifier.tvPlatinumFocus(true, shape)
                     selected -> Modifier.clip(shape).background(Glass.surfaceSelected)
                     else -> Modifier
                 }
@@ -574,14 +868,14 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
             containerColor = Color.Transparent,
             contentColor = if (selected) Paper else Muted,
             focusedContainerColor = Color.Transparent,
-            focusedContentColor = Glass.focusInk,
+            focusedContentColor = if (showFocus) Glass.focusInk else if (selected) Paper else Muted,
         ),
     ) {
         Text(
             label,
             fontSize = 13.sp,
             lineHeight = 18.sp,
-            fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
+            fontWeight = if (selected || showFocus) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
 }

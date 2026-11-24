@@ -73,7 +73,7 @@ internal class TvFocusMemory {
     val dialogs = mutableStateListOf<String>()
     val activeDialogs get() = dialogs.size
     var view: String? = null
-    var restoring = false
+    var restoring by mutableStateOf(false)
     var directionalInput = false
     val last = mutableMapOf<String, String>()
     val focusedTargets = mutableSetOf<String>()
@@ -683,7 +683,7 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
     }
 }
 
-@Composable internal fun CategoryCard(app: TvApp, tag: JSONObject, selected: Boolean, onClick: () -> Unit) {
+@Composable internal fun CategoryCard(app: TvApp, tag: JSONObject, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     var bitmap by remember(tag.optString("id")) { mutableStateOf<Bitmap?>(null) }
     var failed by remember { mutableStateOf(false) }
@@ -702,7 +702,7 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
     val tone = pastelTones[(tag.optString("id").hashCode() ushr 1) % pastelTones.size]
     Button(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .tvFocusTarget("category:${tag.optString("id")}")
             .onFocusChanged { focused = it.isFocused }
