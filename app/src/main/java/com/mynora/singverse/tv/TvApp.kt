@@ -356,6 +356,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         private set
     private var queueAddGeneration = 0
     private var queueAddMessageJob: Job? = null
+    private var pendingHomeAdd: Pair<JSONObject, JSONObject>? = null
     var tags by mutableStateOf(listOf<JSONObject>())
     var participants by mutableStateOf(listOf<JSONObject>())
     var participantsKnown by mutableStateOf(false)
@@ -919,7 +920,11 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         total = 0
         search(focusFirst = true)
     }
-    internal fun addSongFromList(song: JSONObject) {
+    internal fun addSongFromList(song: JSONObject) = addSong(song, homeDetail = false)
+
+    internal fun addSongFromHomeDetail(song: JSONObject) = addSong(song, homeDetail = true)
+
+    private fun addSong(song: JSONObject, homeDetail: Boolean) {
         // Set this before launching so a second confirm cannot enqueue another request.
         if (queueAddSongId.isNotBlank()) return
         val server = client.base; val credential = client.token; val sessionId = snapshot.optString("id")
@@ -929,17 +934,26 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         queueAddSongId = song.getString("id")
         queueAddMessageJob?.cancel(); queueAddMessage = ""
         run {
+            val previousOperation = pendingOperation
             try {
                 sendCommand("ADD", songId = song.getString("id"))
-                if (current()) {
-                    showQueueAddMessage("已加入队列：${song.optString("title")}", generation)
-                }
+                if (current()) completeQueueAdd(song, generation, homeDetail)
             } catch (e: Exception) {
-                if (e is CancellationException || current()) throw e
+                if (e is CancellationException) throw e
+                if (current()) {
+                    val operation = pendingOperation
+                    if (homeDetail && operation != null && operation !== previousOperation) pendingHomeAdd = operation to song
+                    throw e
+                }
             } finally {
                 if (generation == queueAddGeneration) queueAddSongId = ""
             }
         }
+    }
+    private fun completeQueueAdd(song: JSONObject, generation: Int, homeDetail: Boolean) {
+        val message = if (homeDetail) "已加入待唱" else "已加入队列"
+        showQueueAddMessage("$message：${song.optString("title")}", generation)
+        if (homeDetail && page == "首页" && selected === song) selected = null
     }
     private fun showQueueAddMessage(message: String, generation: Int) {
         queueAddMessageJob?.cancel()
@@ -989,7 +1003,10 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             throw e
         }
     }
-    fun discardPending() { pendingOperation = null }
+    fun discardPending() {
+        pendingOperation = null
+        pendingHomeAdd = null
+    }
     fun reconnect() = run { refresh() }
     fun retryPlayback() {
         if (hasConfirmedPlayback) {
@@ -1018,6 +1035,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private suspend fun loadText(songId: String) { playbackOptions.beginTextRead(songId); try { playbackOptions.applyText(songId, json("/api/v1/tv/library/songs/$songId/text-tracks")) } catch (e: Exception) { if (e is CancellationException) throw e; playbackOptions.textFailed(songId) } }
     fun retryPending() = run {
         val body = pendingOperation ?: return@run
+        val homeDetail = pendingHomeAdd?.takeIf { it.first === body }?.second
         val sessionId = snapshot.getString("id")
         val generation = queueAddGeneration
         try {
@@ -1025,19 +1043,22 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             if (snapshot.optString("id") != sessionId) return@run
             check(response.optString("id") == sessionId) { "聚会响应不匹配，请核对状态" }
             acceptSnapshot(response)
-            if (pendingOperation === body) pendingOperation = null
+            if (pendingOperation === body) discardPending()
             error = ""
             executeCommands()
             if (body.optString("action") == "ADD" && snapshot.optString("id") == sessionId && generation == queueAddGeneration) {
-                val title = response.optJSONArray("queue")?.objects()?.lastOrNull {
-                    it.optString("songId") == body.optString("songId")
-                }?.optJSONObject("song")?.optString("title")
-                showQueueAddMessage(title?.let { "已加入队列：$it" } ?: "点歌请求已确认", generation)
+                if (homeDetail != null) completeQueueAdd(homeDetail, generation, homeDetail = true)
+                else {
+                    val title = response.optJSONArray("queue")?.objects()?.lastOrNull {
+                        it.optString("songId") == body.optString("songId")
+                    }?.optJSONObject("song")?.optString("title")
+                    showQueueAddMessage(title?.let { "已加入队列：$it" } ?: "点歌请求已确认", generation)
+                }
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (snapshot.optString("id") == sessionId) {
-                if (e is TvHttpException && e.status in 400..499 && pendingOperation === body) pendingOperation = null
+                if (e is TvHttpException && e.status in 400..499 && pendingOperation === body) discardPending()
                 throw e
             }
         }
@@ -1287,6 +1308,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         categoryResults = false
         queueAddGeneration++; queueAddSongId = ""; queueAddMessage = ""
         queueAddMessageJob?.cancel(); queueAddMessageJob = null
+        pendingHomeAdd = null
         partyInvitation = partyInvitation.clear()
         participantsGeneration++
         participants = emptyList()

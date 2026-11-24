@@ -80,11 +80,10 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         assertTrue("四张收藏封面在同一横排", favorites.maxOf { it.centerY() } - favorites.minOf { it.centerY() } <= 3)
         assertTrue("收藏从左到右有序展示", favorites.zipWithNext().all { (left, right) -> left.right <= right.left })
         val history = (5..7).map(::homeSongBounds)
-        assertTrue("历史显示三行", history.zipWithNext().all { (above, below) -> above.bottom <= below.top })
         val popular = (8..11).map(::homeSongBounds)
-        assertTrue("热门第一行两列", kotlin.math.abs(popular[0].centerY() - popular[1].centerY()) <= 3 && popular[0].right <= popular[1].left)
-        assertTrue("热门第二行两列", kotlin.math.abs(popular[2].centerY() - popular[3].centerY()) <= 3 && popular[2].right <= popular[3].left)
-        assertTrue("热门两行分开", popular[0].bottom <= popular[2].top)
+        val lower = history + popular
+        assertTrue("历史与热门并排展示在首页下方", lower.maxOf { it.centerY() } - lower.minOf { it.centerY() } <= 3)
+        assertTrue("历史和热门歌卡从左到右有序", lower.zipWithNext().all { (left, right) -> left.right <= right.left })
         val image = screenshot("home-a-favorites-history-popular")
         (favorites + history + popular).forEach { bounds ->
             assertTrue("三个区的歌曲均完整留在电视安全区：$bounds", bounds.left >= image.width / 30 && bounds.right <= image.width * 29 / 30 && bounds.top > 0 && bounds.bottom < image.height)
@@ -157,7 +156,8 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         key(KeyEvent.KEYCODE_DPAD_RIGHT)
         waitFor("右键进入第二首收藏", focusedAddressCondition("首页:favorite:test-song-2"))
         key(KeyEvent.KEYCODE_DPAD_RIGHT)
-        waitFor("从末首收藏右键进入手机点歌", focusedAddressCondition("首页:phone"))
+        waitFor("从末首收藏右键直达搜索", focusedAddressCondition("首页:search"))
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "phone")
         key(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFor("从手机点歌下键进入搜索", focusedAddressCondition("首页:search"))
         key(KeyEvent.KEYCODE_DPAD_LEFT)
@@ -187,8 +187,8 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
             val title = "测试歌曲 ${number.toString().padStart(2, '0')}"
             val disabled = allNodes().firstOrNull { it.isVisibleToUser && !it.isEnabled && nodeLabel(it).contains(title) }
             assertNotNull("不可用歌曲应保留明确禁用语义：$title", disabled)
-            assertTrue("不可用歌曲显示原因：$title", nodeLabel(disabled!!).contains("暂不可用"))
-            disabled.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (number == 1) assertTrue("不可用收藏显示提示", nodeLabel(disabled!!).contains("暂不可用"))
+            disabled!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
         instrumentation.waitForIdleSync()
         assertEquals("不可用歌曲不能请求详情", detailRequests, fixture.httpEvents.count { it.matches(Regex("begin GET /api/v1/tv/library/songs/test-song-\\d+")) })
@@ -202,11 +202,79 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         fixture.unavailableSongIds = (1..4).map { "test-song-$it" }.toSet()
         onMain { app.refreshFavorites() }
         waitFor("四张收藏均标记不可用") { onMain { !app.favoritesLoading && app.favoriteSongs().all { !it.optBoolean("available", true) } } }
-        focusHomeTarget("nav:首页")
-        key(KeyEvent.KEYCODE_DPAD_DOWN)
-        waitFor("全部收藏不可用时下键回退到全部收藏入口") { focusedAddress() == "首页:favorites:all" }
+        waitFor("原收藏失效后回退到全部收藏") { focusedAddress() == "首页:favorites:all" }
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "nav:首页")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "search")
         assertSingleVisibleFocus()
         assertTrue("禁用歌曲不应产生任何队列命令", fixture.commandRequests.isEmpty())
+    }
+
+    fun testHomeActivityHeadingsFollowTheirRowsAndReturnToFavorites() {
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "favorite:test-song-1")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "history:test-song-5")
+        homeKey(KeyEvent.KEYCODE_DPAD_RIGHT, "history:test-song-6")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "history:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "favorite:test-song-1")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "history:test-song-5")
+        homeKey(KeyEvent.KEYCODE_DPAD_RIGHT, "history:test-song-6")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "history:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_RIGHT, "popular:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "popular:test-song-11")
+        homeKey(KeyEvent.KEYCODE_DPAD_LEFT, "popular:test-song-10")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "popular:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_LEFT, "history:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "history:test-song-6")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "bar:queue")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "history:test-song-6")
+        homeKey(KeyEvent.KEYCODE_DPAD_RIGHT, "history:test-song-7")
+        homeKey(KeyEvent.KEYCODE_DPAD_RIGHT, "popular:test-song-8")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "popular:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "search")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "popular:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "search")
+        homeKey(KeyEvent.KEYCODE_DPAD_LEFT, "favorite:test-song-4")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "favorites:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "nav:首页")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "favorite:test-song-4")
+        assertTrue("方向键只浏览首页", fixture.commandRequests.isEmpty())
+        assertSingleVisibleFocus()
+    }
+
+    fun testHomeRefreshKeepsTheFocusedShelfWhenSongsDisappear() {
+        focusHomeTarget("history:test-song-7")
+        fixture.homeHistoryCount = 2
+        onMain { app.refreshHomeHistory() }
+        waitFor("原歌卡移除后落到同组最近歌卡") {
+            onMain { !app.homeHistoryLoading && app.homeHistorySongs.size == 2 } &&
+                focusedAddress() == "首页:history:test-song-6"
+        }
+        fixture.homeHistoryCount = 0
+        onMain { app.refreshHomeHistory() }
+        waitFor("历史为空后回本组入口") {
+            onMain { !app.homeHistoryLoading && app.homeHistorySongs.isEmpty() } &&
+                focusedAddress() == "首页:history:all"
+        }
+        assertSingleVisibleFocus()
+    }
+
+    fun testHomeDetailAddReturnsToSongAfterRetryingOriginalRequest() {
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "favorite:test-song-1")
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("收藏详情默认聚焦加入待唱") { focusedAddress().endsWith(":action:加入待唱") }
+        fixture.failNextAddResponse.set(503)
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("入队结果待核对时保留详情") { onMain { app.pendingOperation != null && app.error.isNotEmpty() && app.selected != null } }
+        val requestId = fixture.commandRequests.single().getString("requestId")
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitFor("聚焦原请求重试") { focusedAddress().endsWith(":action:核对后重试") }
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("重试确认后回原歌卡并显示待唱提示") {
+            onMain { app.pendingOperation == null && app.error.isEmpty() && app.selected == null && app.queueAddMessage.startsWith("已加入待唱：") } &&
+                focusedAddress() == "首页:favorite:test-song-1"
+        }
+        assertEquals("重试复用首次请求", listOf(requestId, requestId), fixture.commandRequests.map { it.getString("requestId") })
+        assertEquals("重试仅入队一次", 1, onMain { queuedSongCount(app) })
+        assertSingleVisibleFocus()
     }
 
     fun testHomeActivityDeepRowSurvivesDetailAndForegroundRefresh() {
@@ -265,6 +333,13 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
             focusHomeTarget(target)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
             waitFor("$target 打开$destination") { onMain { app.page == destination && !activity.focusMemory.restoring } }
+            if (target == "search") {
+                waitFor("首页搜索默认聚焦输入框") { focusedAddress() == "找歌:action:搜索歌名、歌手、拼音或编号" }
+                key(KeyEvent.KEYCODE_DPAD_CENTER)
+                waitFor("OK 打开搜索编辑器") { focusedAddress().startsWith("找歌:input:") }
+                key(KeyEvent.KEYCODE_BACK)
+                waitFor("从编辑器返回一次即可收起键盘") { focusedAddress() == "找歌:action:搜索歌名、歌手、拼音或编号" }
+            }
             assertSingleVisibleFocus()
             key(KeyEvent.KEYCODE_BACK)
             waitFor("$destination 返回恢复首页原入口") { onMain { app.page == "首页" } && focusedAddress() == "首页:$target" }
@@ -298,11 +373,18 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
             app.favoritesReady && app.homeHistoryReady && app.homePopularReady && !app.favoritesLoading && !app.homeHistoryLoading && !app.homePopularLoading &&
                 app.favoriteSongs().isEmpty() && app.homeHistorySongs.isEmpty() && app.homePopularSongs.isEmpty()
         } }
-        listOf("favorites:all", "history:all", "popular:all", "search", "phone").forEach { target ->
-            focusHomeTarget(target)
-            assertSingleVisibleFocus()
-        }
-        assertFalse("空态不能保留已移除歌曲焦点", focusedAddress().contains(":favorite:test-song-") || focusedAddress().contains(":history:test-song-") || focusedAddress().contains(":popular:test-song-"))
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "search")
+        homeKey(KeyEvent.KEYCODE_DPAD_LEFT, "favorites:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_RIGHT, "phone")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "search")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "popular:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "search")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "popular:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_LEFT, "history:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_DOWN, "bar:queue")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "history:all")
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "nav:首页")
+        assertSingleVisibleFocus()
         screenshot("home-a-empty-sections").recycle()
     }
 
@@ -407,12 +489,7 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         assertSingleVisibleFocus()
         val image = screenshot("navigation-focus-selects-page")
         assertEquals("当前焦点导航同步成为选中页面", "当前页面", stateDescription(allNodes().first { it.isClickable && nodeLabel(it) == "点歌" }))
-        assertTrue("点歌焦点保留深色容器", colorPixels(image, 44, 44, 46, songCenterBounds) > 100)
-        val focusBounds = Rect(
-            (songCenterBounds.left - 12).coerceAtLeast(0), (songCenterBounds.top - 12).coerceAtLeast(0),
-            (songCenterBounds.right + 12).coerceAtMost(image.width), (songCenterBounds.bottom + 12).coerceAtMost(image.height),
-        )
-        assertTrue("点歌当前遥控焦点应有可见白色描边", colorPixels(image, 245, 245, 247, focusBounds) > 100)
+        assertTrue("点歌导航移动焦点后有可见亮色高亮", colorPixels(image, 236, 240, 246, songCenterBounds) > 100)
         assertSingleVisibleFocus()
         image.recycle()
         assertTrue("点歌中心保留四项真实功能", listOf("搜索歌曲", "歌手点歌", "分类点歌", "我的歌单").all { text -> allNodes().any { nodeLabel(it).contains(text) } })
@@ -422,16 +499,14 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("真实搜索页面") { onMain { app.page == "找歌" } }
         key(KeyEvent.KEYCODE_DPAD_DOWN)
-        waitFor("搜索输入行遥控焦点") { focusedLabel().contains("歌名 / 歌手 / 拼音 / 编号") }
+        waitFor("搜索输入行遥控焦点") { focusedAddress().endsWith(":action:搜索歌名、歌手、拼音或编号") }
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("确认进入可编辑输入框") { focusedAddress().contains(":input:") }
         instrumentation.sendStringSync("remote")
         waitFor("硬件按键输入进入真实搜索状态") { onMain { app.query == "remote" } }
         screenshot("search-input-editing")
         key(KeyEvent.KEYCODE_BACK)
-        // An IME may consume the first Back to hide itself before the editor receives Back.
-        if (focusedAddress().contains(":input:")) key(KeyEvent.KEYCODE_BACK)
-        waitFor("结束编辑恢复原输入行") { focusedAddress().endsWith(":action:remote") }
+        waitFor("结束编辑恢复原输入行") { focusedAddress().endsWith(":action:搜索歌名、歌手、拼音或编号") }
         assertEquals("退出键盘不能离开搜索页面", "找歌", onMain { app.page })
         assertSingleVisibleFocus()
         key(KeyEvent.KEYCODE_BACK)
@@ -442,16 +517,16 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
     }
 
     fun testTopNavigationSwitchesWithoutConfirmAndRetainsFocus() {
-        listOf("点歌", "收藏", "已点", "设置", "已点", "收藏", "点歌", "首页").forEachIndexed { index, destination ->
-            key(if (index < 4) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
+        listOf("点歌", "已点", "设置", "已点", "点歌", "首页").forEachIndexed { index, destination ->
+            key(if (index < 3) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
             waitFor("方向键直接切换至$destination") { onMain { app.page == destination && !activity.focusMemory.restoring } && focusedAddress() == "$destination:nav:$destination" }
             assertTrue("页面选中状态同步导航", allNodes().any { it.isClickable && nodeLabel(it).startsWith(destination) && stateDescription(it) == "当前页面" })
             assertSingleVisibleFocus()
         }
         repeat(2) {
-            repeat(4) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT); SystemClock.sleep(70) }
+            repeat(3) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT); SystemClock.sleep(70) }
             waitFor("快速连续右键仍停留设置导航") { onMain { app.page == "设置" && !activity.focusMemory.restoring } && focusedAddress() == "设置:nav:设置" }
-            repeat(4) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT); SystemClock.sleep(70) }
+            repeat(3) { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT); SystemClock.sleep(70) }
             waitFor("快速连续左键仍停留首页导航") { onMain { app.page == "首页" && !activity.focusMemory.restoring } && focusedAddress() == "首页:nav:首页" }
         }
         assertTrue("浏览导航不能发出点歌或播放命令", fixture.commandRequests.isEmpty())
@@ -587,10 +662,8 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
     fun testNestedErrorDialogRestoresPhoneDialogAndHomeFocus() {
         waitFor("手机邀请已就绪") { onMain { app.invitation == fixture.invitationUrl } }
         key(KeyEvent.KEYCODE_DPAD_DOWN)
-        repeat(6) {
-            if (!focusedAddress().endsWith(":phone")) key(KeyEvent.KEYCODE_DPAD_RIGHT)
-        }
-        assertTrue("首页手机点歌卡片可通过方向键到达", focusedAddress().endsWith(":phone"))
+        repeat(4) { key(KeyEvent.KEYCODE_DPAD_RIGHT) }
+        homeKey(KeyEvent.KEYCODE_DPAD_UP, "phone")
         val phoneCardAddress = focusedAddress()
         assertSingleVisibleFocus()
 
@@ -651,7 +724,10 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("收藏详情展示真实点歌动作") { onMain { app.selected?.optString("id") == "test-song-1" } && focusedAddress().endsWith(":action:加入待唱") }
         key(KeyEvent.KEYCODE_DPAD_CENTER)
-        waitFor("真实ADD命令更新队列") { fixture.actions.contains("ADD") && onMain { queuedSongCount(app) == 1 } }
+        waitFor("真实ADD成功后恢复原歌卡并提示已加入待唱") {
+            fixture.actions.contains("ADD") && onMain { queuedSongCount(app) == 1 && app.queueAddMessage.startsWith("已加入待唱：") } &&
+                focusedAddress() == "首页:favorite:test-song-1"
+        }
         repeat(6) { if (!focusedLabel().contains("已点歌曲")) key(KeyEvent.KEYCODE_DPAD_DOWN) }
         if (focusedLabel().contains("确认开唱")) key(KeyEvent.KEYCODE_DPAD_LEFT)
         assertTrue("底栏已点入口须可达且绑定真实数量", focusedAddress().endsWith(":bar:queue") && onMain { queuedSongCount(app) == 1 })
@@ -1027,6 +1103,13 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
     }
 
     private fun focusedAddressCondition(address: String): () -> Boolean = { focusedAddress() == address }
+
+    private fun homeKey(code: Int, target: String) {
+        val previous = focusedAddress()
+        instrumentation.sendKeyDownUpSync(code)
+        waitFor("${KeyEvent.keyCodeToString(code)} 后聚焦 $target", focusedAddressCondition("首页:$target"))
+        keyHistory.add("${KeyEvent.keyCodeToString(code)}: $previous -> $target")
+    }
 
     private fun homeSongBounds(number: Int): Rect {
         val title = "测试歌曲 ${number.toString().padStart(2, '0')}"

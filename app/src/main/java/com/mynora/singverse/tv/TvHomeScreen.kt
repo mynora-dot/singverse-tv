@@ -10,11 +10,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
@@ -27,11 +29,9 @@ import androidx.tv.material3.*
 import org.json.JSONObject
 
 /** The home shelves show NAS data; song selection keeps the existing detail/queue flow. */
-@Composable internal fun TvHomeScreen(app: TvApp, onSearch: () -> Unit, onPhone: () -> Unit) {
-    val favorites = app.favoriteSongs().take(4)
+@Composable internal fun TvHomeScreen(app: TvApp, focus: TvHomeFocusRoutes, onSearch: () -> Unit, onPhone: () -> Unit) {
+    val favorites = focus.favorites
     val memory = LocalTvFocusMemory.current
-    val page = LocalTvFocusPage.current
-    val lastFavorite = favorites.lastOrNull { it.optBoolean("available", true) }?.optString("id")
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val lowerHeight = (maxHeight * 0.39f).coerceIn(138.dp, 158.dp)
         val upperHeight = (maxHeight - lowerHeight - 16.dp).coerceAtLeast(190.dp)
@@ -41,16 +41,14 @@ import org.json.JSONObject
                     HomeSectionHeading(
                         "我的收藏",
                         "全部收藏",
-                        "favorites:all",
+                        HomeShelf.FAVORITES.all,
                         titleSize = 18.sp,
-                        actionModifier = Modifier.focusProperties {
-                            up = memory.targets["$page:nav:首页"] ?: FocusRequester.Default
-                            down = lastFavorite?.let { memory.targets["$page:favorite:$it"] } ?: FocusRequester.Default
-                        },
+                        actionModifier = focus.collectionHeading(),
                     ) { app.navigate("收藏") }
                     if (favorites.isEmpty()) HomeSectionState(
                         Modifier.weight(1f), app.favoritesLoading, app.favoritesReady, app.favoritesError,
-                        "还没有收藏歌曲", "在手机、后台添加，或播放时按「收藏」。", "favorites:retry", app::refreshFavorites,
+                        "还没有收藏歌曲", "在手机、后台添加，或播放时按「收藏」。", HomeShelf.FAVORITES.retry,
+                        app::refreshFavorites, retryModifier = focus.retry(HomeShelf.FAVORITES),
                     ) else {
                         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                             val landscape = favorites.size <= 2
@@ -67,12 +65,7 @@ import org.json.JSONObject
                                             Modifier
                                                 .width(width)
                                                 .fillMaxHeight()
-                                                .focusProperties {
-                                                    if (id == lastFavorite) {
-                                                        up = memory.targets["$page:favorites:all"] ?: FocusRequester.Default
-                                                        right = memory.targets["$page:phone"] ?: FocusRequester.Default
-                                                    }
-                                                },
+                                                .then(focus.favoriteSong(HomeShelf.FAVORITES.song(id))),
                                         )
                                     }
                                 }
@@ -87,21 +80,15 @@ import org.json.JSONObject
                         Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .focusProperties {
-                                left = memory.targets["$page:favorite:$lastFavorite"] ?: FocusRequester.Default
-                                down = memory.targets["$page:search"] ?: FocusRequester.Default
-                            },
+                            .then(focus.phone()),
                         onPhone,
                     )
                     HomeTile(
                         Modifier
                             .fillMaxWidth()
                             .height(40.dp)
-                            .tvFocusTarget("search")
-                            .focusProperties {
-                                up = memory.targets["$page:phone"] ?: FocusRequester.Default
-                                left = memory.targets["$page:favorite:$lastFavorite"] ?: FocusRequester.Default
-                            },
+                            .then(focus.search())
+                            .tvFocusTarget("search"),
                         shape = GlassShape.pill,
                         onClick = onSearch,
                     ) { tileFocused ->
@@ -118,23 +105,35 @@ import org.json.JSONObject
             }
             Row(Modifier.height(lowerHeight).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HomeSectionHeading("历史记录", "查看全部", "history:all", onClick = { app.navigate("历史记录") })
-                    if (app.homeHistorySongs.isEmpty()) HomeSectionState(
+                    val shelf = HomeShelf.HISTORY
+                    HomeSectionHeading("历史记录", "查看全部", shelf.all, actionModifier = focus.activityHeading(shelf)) {
+                        app.navigate("历史记录")
+                    }
+                    if (focus.history.isEmpty()) HomeSectionState(
                         Modifier.weight(1f), app.homeHistoryLoading, app.homeHistoryReady, app.homeHistoryError,
-                        "还没有播放记录", "唱过的歌曲会出现在这里。", "history:retry", app::refreshHomeHistory,
+                        "还没有播放记录", "唱过的歌曲会出现在这里。", shelf.retry,
+                        app::refreshHomeHistory, retryModifier = focus.retry(shelf),
                     ) else Column(Modifier.weight(1f)) {
-                        HomeCoverShelfRow(app, app.homeHistorySongs.take(4), "history", Modifier.weight(1f))
+                        HomeCoverShelfRow(app, focus.history, shelf, focus, Modifier.weight(1f))
                         if (app.homeHistoryError.isNotBlank()) HomeStaleNotice("记录更新失败，可查看全部后重试")
                     }
                 }
-                Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical = 8.dp).background(Color(0x14FFFFFF)))
+                Box(
+                    Modifier.width(1.dp).fillMaxHeight()
+                        .onGloballyPositioned { memory.home.shelfDivider = it.positionInRoot().x }
+                        .padding(vertical = 8.dp).background(Color(0x14FFFFFF)),
+                )
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    HomeSectionHeading("热门歌曲", "查看全部", "popular:all", onClick = { app.navigate("热门歌曲") })
-                    if (app.homePopularSongs.isEmpty()) HomeSectionState(
+                    val shelf = HomeShelf.POPULAR
+                    HomeSectionHeading("热门歌曲", "查看全部", shelf.all, actionModifier = focus.activityHeading(shelf)) {
+                        app.navigate("热门歌曲")
+                    }
+                    if (focus.popular.isEmpty()) HomeSectionState(
                         Modifier.weight(1f), app.homePopularLoading, app.homePopularReady, app.homePopularError,
-                        "近 30 天暂无热门歌曲", "有播放记录后，按曲库热度排序。", "popular:retry", app::refreshHomePopular,
+                        "近 30 天暂无热门歌曲", "有播放记录后，按曲库热度排序。", shelf.retry,
+                        app::refreshHomePopular, retryModifier = focus.retry(shelf),
                     ) else Column(Modifier.weight(1f)) {
-                        HomeCoverShelfRow(app, app.homePopularSongs.take(4), "popular", Modifier.weight(1f))
+                        HomeCoverShelfRow(app, focus.popular, shelf, focus, Modifier.weight(1f))
                         if (app.homePopularError.isNotBlank()) HomeStaleNotice("热门更新失败，可查看全部后重试")
                     }
                 }
@@ -202,7 +201,7 @@ import org.json.JSONObject
         onClick = { app.openSong(song) },
         enabled = available,
         modifier = modifier
-            .tvFocusTarget("favorite:${song.getString("id")}")
+            .tvFocusTarget(HomeShelf.FAVORITES.song(song.getString("id")))
             .onFocusChanged { focused = it.isFocused }
             .tvSpringFocus(focused && available, scaleTarget = 1.05f, liftDp = 1.5.dp)
             .then(
@@ -250,15 +249,25 @@ import org.json.JSONObject
     }
 }
 
-@Composable private fun HomeCoverShelfRow(app: TvApp, songs: List<JSONObject>, prefix: String, modifier: Modifier = Modifier) {
+@Composable private fun HomeCoverShelfRow(
+    app: TvApp,
+    songs: List<JSONObject>,
+    shelf: HomeShelf,
+    focus: TvHomeFocusRoutes,
+    modifier: Modifier = Modifier,
+) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val gap = 12.dp
         val tileWidth = ((maxWidth - gap * 3) / 4f).coerceAtLeast(1.dp)
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
             songs.forEach { song ->
                 val id = song.optString("id")
+                val focusKey = shelf.song(id)
                 key(id) {
-                    HomeShelfCoverTile(app, song, "$prefix:$id", Modifier.width(tileWidth).fillMaxHeight())
+                    HomeShelfCoverTile(
+                        app, song, focusKey,
+                        Modifier.width(tileWidth).fillMaxHeight().then(focus.activitySong(shelf, focusKey)),
+                    )
                 }
             }
         }
@@ -447,6 +456,7 @@ import org.json.JSONObject
     emptyDetail: String,
     retryKey: String,
     retry: () -> Unit,
+    retryModifier: Modifier = Modifier,
 ) {
     Column(
         modifier.fillMaxWidth().glassSurface(TvShape.card, base = Glass.surfaceCard).padding(14.dp),
@@ -466,9 +476,11 @@ import org.json.JSONObject
             fontSize = 11.sp,
             lineHeight = 16.sp,
         )
-        if (!loading && (error.isNotBlank() || !ready)) HomeButton("重新读取", focusKey = retryKey, onClick = retry)
+        if (showsHomeRetry(loading, ready, error)) HomeButton("重新读取", retryModifier, focusKey = retryKey, onClick = retry)
     }
 }
+
+internal fun showsHomeRetry(loading: Boolean, ready: Boolean, error: String) = !loading && (error.isNotBlank() || !ready)
 
 @Composable private fun HomeStaleNotice(message: String) {
     Text(message, color = Muted, fontSize = 10.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
