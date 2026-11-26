@@ -4801,6 +4801,17 @@
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/ArtworkCacheControl"
+              },
+              "ETag": {
+                "$ref": "#/components/headers/ArtworkETag"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/ArtworkVary"
+              }
+            },
             "content": {
               "image/jpeg": {
                 "schema": {
@@ -4815,6 +4826,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/ArtworkNotModified"
           },
           "400": {
             "description": "Invalid input",
@@ -4885,6 +4899,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "description": "Use thumbnail for a PNG with longest side at most 512 pixels.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "original",
+                "thumbnail"
+              ],
+              "default": "original"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ArtworkIfNoneMatch"
           }
         ]
       }
@@ -11323,11 +11353,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "description": "Use thumbnail for a PNG with longest side at most 512 pixels.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "original",
+                "thumbnail"
+              ],
+              "default": "original"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ArtworkIfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "JPEG or PNG",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/ArtworkCacheControl"
+              },
+              "ETag": {
+                "$ref": "#/components/headers/ArtworkETag"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/ArtworkVary"
+              }
+            },
             "content": {
               "image/jpeg": {
                 "schema": {
@@ -11342,6 +11399,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/ArtworkNotModified"
           },
           "401": {
             "description": "Missing or revoked identity"
@@ -11693,11 +11753,25 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/ArtworkIfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/ArtworkCacheControl"
+              },
+              "ETag": {
+                "$ref": "#/components/headers/ArtworkETag"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/ArtworkVary"
+              }
+            },
             "content": {
               "image/jpeg": {
                 "schema": {
@@ -11706,6 +11780,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/ArtworkNotModified"
           },
           "400": {
             "description": "Invalid image"
@@ -11901,11 +11978,25 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/ArtworkIfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/ArtworkCacheControl"
+              },
+              "ETag": {
+                "$ref": "#/components/headers/ArtworkETag"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/ArtworkVary"
+              }
+            },
             "content": {
               "image/jpeg": {
                 "schema": {
@@ -11914,6 +12005,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/ArtworkNotModified"
           },
           "400": {
             "description": "Invalid image"
@@ -12300,11 +12394,25 @@
                 "background"
               ]
             }
+          },
+          {
+            "$ref": "#/components/parameters/ArtworkIfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/ArtworkCacheControl"
+              },
+              "ETag": {
+                "$ref": "#/components/headers/ArtworkETag"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/ArtworkVary"
+              }
+            },
             "content": {
               "image/jpeg": {
                 "schema": {
@@ -12313,6 +12421,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/ArtworkNotModified"
           },
           "400": {
             "description": "Invalid input"
@@ -12586,11 +12697,25 @@
                 "background"
               ]
             }
+          },
+          {
+            "$ref": "#/components/parameters/ArtworkIfNoneMatch"
           }
         ],
         "responses": {
           "200": {
             "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/ArtworkCacheControl"
+              },
+              "ETag": {
+                "$ref": "#/components/headers/ArtworkETag"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/ArtworkVary"
+              }
+            },
             "content": {
               "image/jpeg": {
                 "schema": {
@@ -12599,6 +12724,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "$ref": "#/components/responses/ArtworkNotModified"
           },
           "400": {
             "description": "Invalid input"
@@ -27510,7 +27638,61 @@
         "description": "Configured internal compute identity plus an active task grant."
       }
     },
+    "parameters": {
+      "ArtworkIfNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "description": "Validator previously returned for the same image representation. Checked after authorization and image resolution.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "headers": {
+      "ArtworkCacheControl": {
+        "description": "Successful images and 304 responses can be kept in a private cache for 300 seconds.",
+        "schema": {
+          "type": "string",
+          "const": "private, max-age=300"
+        }
+      },
+      "ArtworkETag": {
+        "description": "Strong entity tag for the SHA-256 of the actual representation bytes.",
+        "schema": {
+          "type": "string",
+          "pattern": "^\"[0-9a-f]{64}\"$"
+        }
+      },
+      "ArtworkVary": {
+        "description": "Keeps representations isolated by both authorization boundaries.",
+        "schema": {
+          "type": "string",
+          "const": "Authorization, Cookie"
+        }
+      }
+    },
+    "responses": {
+      "ArtworkNotModified": {
+        "description": "The authorized image representation is unchanged. The response has no body.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/ArtworkCacheControl"
+          },
+          "ETag": {
+            "$ref": "#/components/headers/ArtworkETag"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/ArtworkVary"
+          }
+        }
+      }
+    },
     "schemas": {
+      "SongCoverVersion": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "description": "SHA-256 of the currently committed original cover attachment, when available. An advisory metadata version; validate image bytes using the response ETag."
+      },
       "Account": {
         "type": "object",
         "required": [
@@ -31248,6 +31430,9 @@
           "coverPath": {
             "type": "string"
           },
+          "coverVersion": {
+            "$ref": "#/components/schemas/SongCoverVersion"
+          },
           "album": {
             "type": [
               "string",
@@ -32153,7 +32338,7 @@
           "switchableAudio": {
             "type": "boolean",
             "default": false,
-            "description": "Opt-in for admin browser HLS role switching. When confirmed original and backing source tracks exist, retain alternate audio in one HLS resource. The client selects the role using execution.trackMapping and HLS rendition URIs stream_audioN.m3u8; N is the zero-based audio entry index in trackMapping. Other clients and generated accompaniment keep existing negotiation behavior."
+            "description": "Opt-in for HLS-capable admin browsers and Android TV devices. With distinct, confirmed source tracks for original and backing, the client selects audioRole from the shared playback resource. Android TV can receive DIRECT for compatible media and alternate audio in HLS when conversion is needed. For HLS, execution.trackMapping links source tracks to stream_audioN.m3u8, where N is the zero-based audio entry index. Explicit audio_id selects a single track. Generated accompaniment uses backingUrl."
           }
         }
       },
@@ -32345,6 +32530,9 @@
           "coverPath": {
             "type": "string",
             "description": "Administrator-authenticated same-origin resource path"
+          },
+          "coverVersion": {
+            "$ref": "#/components/schemas/SongCoverVersion"
           },
           "durationMs": {
             "type": [
@@ -37278,6 +37466,9 @@
           },
           "coverPath": {
             "type": "string"
+          },
+          "coverVersion": {
+            "$ref": "#/components/schemas/SongCoverVersion"
           },
           "revision": {
             "type": "string"

@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.test.InstrumentationTestRunner
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import kotlinx.coroutines.runBlocking
 
 /** Replaces only the instrumented launch; this class is absent from production APKs. */
 class TvUiTestRunner : InstrumentationTestRunner() {
@@ -23,7 +24,7 @@ class TvUiTestRunner : InstrumentationTestRunner() {
         else super.newActivity(loader, className, intent)
 }
 
-/** Empty preferences prevent login tests from touching the user's saved television connection. */
+/** Isolated preferences prevent login tests from touching the user's saved television connection. */
 class TvLoginFixtureActivity : ComponentActivity() {
     lateinit var app: TvApp
         private set
@@ -34,8 +35,12 @@ class TvLoginFixtureActivity : ComponentActivity() {
             override fun getApplicationContext(): Context = this
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = super.getSharedPreferences(prefix + name, mode)
         }
+        intent.getStringExtra("tv-login-saved-base")?.let { base ->
+            val token = requireNotNull(intent.getStringExtra("tv-login-saved-token"))
+            runBlocking { TvClient(isolated).save(base, token) }
+        }
         app = TvApp(isolated, pairingLifetimeMillis = intent.getLongExtra("tv-login-lifetime", 300_000))
-        setContent { SingVerseTvTheme { if (app.connected) TvScreen(app, TvFocusMemory()) else TvLoginScreen(app) } }
+        setContent { SingVerseTvTheme { if (app.connected || app.restoringConnection) TvScreen(app) else TvLoginScreen(app) } }
     }
     override fun onDestroy() { if (::app.isInitialized) app.close(); super.onDestroy() }
 }
@@ -54,6 +59,14 @@ class TvUiFixtureActivity : ComponentActivity() {
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
                 super.getSharedPreferences(prefix + name, mode)
         }
+        val playbackFixture = intent.getBooleanExtra("tv-ui-playback", false)
+        if (playbackFixture) {
+            isolated.getSharedPreferences("playback-options", Context.MODE_PRIVATE).edit()
+                .putInt("volume", 0)
+                .putInt("audio-delay", 500)
+                .putInt("lyric-offset", 5000)
+                .apply()
+        }
         app = TvApp(isolated).apply {
             client.base = intent.getStringExtra("tv-ui-fixture")!!
             client.token = "test-fixture-device-only"
@@ -62,8 +75,8 @@ class TvUiFixtureActivity : ComponentActivity() {
             online = true
             serverName = "UI 验收测试服务"
             snapshot = TvUiFixture.snapshot()
-            homeSongs = if (intent.getBooleanExtra("tv-ui-playback", false)) TvPlaybackFixture.songs() else TvUiFixture.songs()
-            if (intent.getBooleanExtra("tv-ui-playback", false)) tags = TvPlaybackFixture.classificationTags()
+            homeSongs = if (playbackFixture) TvPlaybackFixture.songs() else TvUiFixture.songs()
+            if (playbackFixture) tags = TvPlaybackFixture.classificationTags()
             songs = homeSongs
             homeTotal = homeSongs.size.toLong()
             total = homeTotal

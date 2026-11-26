@@ -29,7 +29,7 @@ class TvImageTransportTest {
                     }
                     val address = "http://127.0.0.1:${server.localPort}"
                     if (size == 2_000_000) {
-                        assertArrayEquals(bytes, TvImageTransport.read(address, "fixture", "/api/v1/tv/library/songs/1/cover"))
+                        assertArrayEquals(bytes, TvImageTransport.read(address, "fixture", "/api/v1/tv/library/songs/1/cover").bytes)
                     } else {
                         val failure = runCatching { TvImageTransport.read(address, "fixture", "/api/v1/tv/library/songs/1/cover") }.exceptionOrNull()
                         assertTrue(failure is IOException)
@@ -56,7 +56,7 @@ class TvImageTransportTest {
                         input.read() == -1
                     }
                 }
-                val requests = TvImageRequests<ByteArray> { null }
+                val requests = TvImageRequests<TvImageResponse> { null }
                 val job = launch(Dispatchers.Default) {
                     requests.load("cover") { TvImageTransport.read("http://127.0.0.1:${server.localPort}", "fixture", "/api/v1/tv/library/songs/1/cover") }
                 }
@@ -79,10 +79,52 @@ class TvImageTransportTest {
                         socket.getOutputStream().write("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:${external.localPort}/stolen\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
                     }
                 }
-                assertNull(TvImageTransport.read("http://127.0.0.1:${server.localPort}", "fixture", "/api/v1/tv/library/songs/1/cover"))
+                assertEquals(302, TvImageTransport.read("http://127.0.0.1:${server.localPort}", "fixture", "/api/v1/tv/library/songs/1/cover").status)
                 response.get(3, TimeUnit.SECONDS)
                 assertThrows(SocketTimeoutException::class.java) { external.accept().close() }
             } finally { executor.shutdownNow() }
         } }
+    }
+
+    @Test fun conditionalRequestsKeepAuthenticationAndReadOnlyAnOptedInFreshnessWindow() = runBlocking<Unit> {
+        val policies = listOf(
+            "private, max-age=300" to "",
+            "private, max-age=300, no-store" to "",
+            "public, max-age=300" to "",
+            "private, max-age=300" to "Vary: Accept-Encoding, *\r\n",
+        )
+        for ((control, varyHeaders) in policies) {
+            ServerSocket(0).use { server ->
+                val executor = Executors.newSingleThreadExecutor()
+                val etag = artworkEtagFor(byteArrayOf(1))
+                try {
+                    val request = executor.submit<List<String>> {
+                        server.accept().use { socket ->
+                            socket.soTimeout = 3000
+                            val reader = socket.getInputStream().bufferedReader()
+                            val headers = generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                            socket.getOutputStream().write(
+                                ("HTTP/1.1 304 Not Modified\r\nCache-Control: $control\r\nETag: $etag\r\n" +
+                                    "${varyHeaders}Age: 10\r\nConnection: close\r\n\r\n").toByteArray(),
+                            )
+                            headers
+                        }
+                    }
+                    val start = System.currentTimeMillis()
+                    val response = TvImageTransport.read("http://127.0.0.1:${server.localPort}", "fixture", "/api/v1/tv/library/songs/1/cover", etag)
+                    assertEquals(304, response.status)
+                    assertNull(response.bytes)
+                    assertEquals(etag, response.etag)
+                    if (control == "private, max-age=300" && varyHeaders.isEmpty()) {
+                        assertTrue(response.expiresAt!! in (start + 290_000)..(System.currentTimeMillis() + 290_000))
+                    } else {
+                        assertNull(response.expiresAt)
+                    }
+                    val headers = request.get(3, TimeUnit.SECONDS)
+                    assertTrue(headers.any { it.equals("Authorization: Bearer fixture", ignoreCase = true) })
+                    assertTrue(headers.any { it.equals("If-None-Match: $etag", ignoreCase = true) })
+                } finally { executor.shutdownNow() }
+            }
+        }
     }
 }

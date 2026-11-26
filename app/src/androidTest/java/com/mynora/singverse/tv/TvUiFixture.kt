@@ -14,6 +14,7 @@ import java.net.SocketException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
@@ -35,6 +36,8 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
     @Volatile var mixedSongMetadata = false
     @Volatile var addDelayMs = 0L
     @Volatile var rejectTvLogin = false
+    @Volatile var sessionRecoveryGate: CountDownLatch? = null
+    @Volatile var homeResponseGate: CountDownLatch? = null
     @Volatile var requireLoginMfa = false
     @Volatile var sessionId = "ui-test-session"
     @Volatile var homeFavoritesCount = 4
@@ -107,6 +110,12 @@ internal class TvUiFixture(private val playback: TvPlaybackFixture? = null) : Au
                 val path = request.getOrElse(1) { "/" }.substringBefore('?')
                 description = "${request.firstOrNull()} $path"
                 httpEvents.add("begin $description")
+                val gate = when {
+                    path.endsWith("/recover") -> sessionRecoveryGate
+                    path == "/api/v1/tv/home" -> homeResponseGate
+                    else -> null
+                }
+                gate?.await(10, TimeUnit.SECONDS)
                 val coverNumber = Regex("/api/v1/tv/library/songs/test-song-(\\d+)/cover").matchEntire(path)?.groupValues?.get(1)?.toInt()
                 val media = playback?.media(path)
                 val jsonBody = if (length > 0) JSONObject(String(body, Charsets.UTF_8)) else JSONObject()

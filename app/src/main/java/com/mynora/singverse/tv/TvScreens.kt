@@ -46,6 +46,9 @@ import androidx.compose.ui.unit.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
@@ -128,18 +131,26 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
 }
 
 @Composable internal fun TvScreen(app: TvApp, focusMemory: TvFocusMemory = remember(app.client.base) { TvFocusMemory() }) {
-    val hazeState = rememberHazeState()
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
-        AmbientStage(modifier = Modifier.tvHazeSource(hazeState))
         val density = LocalDensity.current
         val scale = minOf(maxWidth.value / 960f, maxHeight.value / 540f)
-        CompositionLocalProvider(
-            LocalDensity provides Density(density.density * scale, density.fontScale),
-            LocalTvHazeState provides hazeState,
-        ) {
-            Box(Modifier.fillMaxSize()) {
-                TvScreenContent(app, focusMemory)
-                PartyReactionOverlay(app)
+        CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
+            if (app.restoringConnection) {
+                Text(
+                    "正在连接上次的 NAS…",
+                    modifier = Modifier.align(Alignment.Center).semantics { liveRegion = LiveRegionMode.Polite },
+                    color = Paper,
+                    fontSize = 20.sp,
+                )
+            } else {
+                val hazeState = rememberHazeState()
+                AmbientStage(modifier = Modifier.tvHazeSource(hazeState))
+                CompositionLocalProvider(LocalTvHazeState provides hazeState) {
+                    Box(Modifier.fillMaxSize()) {
+                        TvScreenContent(app, focusMemory)
+                        PartyReactionOverlay(app)
+                    }
+                }
             }
         }
     }
@@ -591,10 +602,9 @@ internal fun time(ms: Long): String = "${ms.coerceAtLeast(0) / 60000}:${(ms.coer
             Text(if (action == "清空待唱") "所有待唱歌曲将被移除，当前演唱不受影响。" else "请确认后继续。", color = Muted, fontSize = 14.sp, lineHeight = 20.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Action("取消") { app.pendingConfirm = null }
-                Action("确认", selected = true, danger = action in listOf("散场", "清空待唱", "更换 NAS")) {
+                Action("确认", selected = true, danger = action in listOf("清空待唱", "更换 NAS")) {
                     app.pendingConfirm = null
                     when (action) {
-                        "散场" -> app.command("END")
                         "清空待唱" -> app.command("CLEAR")
                         "退出演唱" -> { app.stopLocal(); app.navigate("首页") }
                         "更换 NAS" -> app.disconnect()
@@ -1179,7 +1189,7 @@ private fun categoryDimensionLabel(dimension: String): String = when (dimension)
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SongArtwork(app, JSONObject(playlist.toString()).put("revision", playlist.optString("coverVersion")), Modifier.size(62.dp))
+            SongArtwork(app, playlist, Modifier.size(62.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(playlist.optString("name"), color = Paper, fontSize = 23.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${playlist.optInt("count")} 首歌曲", color = Brand, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
@@ -1609,7 +1619,7 @@ private fun categoryDimensionLabel(dimension: String): String = when (dimension)
         }
     }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        val settingsGroups = remember { listOf("连接", "播放设置", "聚会管理", "本场参与者", "设备信息", "应用更新") }
+        val settingsGroups = remember { listOf("连接", "播放设置", "设备信息", "应用更新") }
         Column(
             Modifier
                 .width(196.dp)
@@ -1655,27 +1665,6 @@ private fun categoryDimensionLabel(dimension: String): String = when (dimension)
                         SettingActionRow("检查连接", "重新读取服务身份、聚会和播放状态") { Action("检查连接", textSize = 13.sp) { app.connect() } }
                         SettingActionRow("更换 NAS", "忘记这台电视保存的当前设备凭据") { Action("更换 NAS / 忘记连接", danger = true, textSize = 13.sp) { app.pendingConfirm = "更换 NAS" } }
                         SettingActionRow("停止本机播放", "只停止这台电视，不替远程交接自动确认") { Action("停止本机播放", textSize = 13.sp) { app.stopLocal() } }
-                    }
-                    "聚会管理" -> {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text("聚会管理", color = Paper, fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
-                                Text(if (app.snapshot.optBoolean("acceptingRequests")) "当前允许亲友点歌" else "当前已暂停接单", color = Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
-                            }
-                            StatusPill(
-                                if (app.snapshot.optString("status") == "ENDED") "聚会已结束" else if (app.snapshot.optBoolean("acceptingRequests")) "接单中" else "已暂停接单",
-                                if (app.snapshot.optBoolean("acceptingRequests")) Success else Glass.champagneGold,
-                                pulse = app.snapshot.optBoolean("acceptingRequests"),
-                            )
-                        }
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
-                        if (app.snapshot.optString("status") == "ENDED") Action("开始新聚会", selected = true, shape = GlassShape.pill) { app.newSession() }
-                        else {
-                            SettingActionRow("亲友点歌", "暂停后保留现有队列，不再接收新点歌") {
-                                Action(if (app.snapshot.optBoolean("acceptingRequests")) "暂停接单" else "恢复接单", textSize = 13.sp) { app.command(if (app.snapshot.optBoolean("acceptingRequests")) "LOCK" else "UNLOCK") }
-                            }
-                            SettingActionRow("结束这场聚会", "停止接单并使邀请与参与授权失效") { Action("结束聚会", danger = true, textSize = 13.sp) { app.pendingConfirm = "散场" } }
-                        }
                     }
                     "播放设置" -> PlaybackSettings(app)
                     "应用更新" -> {
@@ -1860,29 +1849,6 @@ private fun categoryDimensionLabel(dimension: String): String = when (dimension)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             UpdateMetaTile("界面渲染策略", tierLabel, Modifier.weight(1f))
                             UpdateMetaTile("兼容基线", "Android 5.0+ (minSdk 21)", Modifier.weight(1f))
-                        }
-                    }
-                    else -> {
-                        Heading("本场参与者", "主持权限只在电视上授予；撤销后可重新扫码加入。")
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
-                        if (app.participants.isEmpty()) EmptyState("还没有亲友加入", "通过「手机点歌」邀请亲友。")
-                        app.participants.forEach { participant ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(TvShape.control)
-                                    .background(Color(0x0BFFFFFF))
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    Text(participant.optString("name"), color = Paper, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(if (participant.optBoolean("revoked")) "已撤销" else "已加入本场", color = if (participant.optBoolean("revoked")) Muted else Success, fontSize = 12.sp)
-                                }
-                                Action("授予主持", focusKey = "host:${participant.getString("id")}", textSize = 13.sp) { app.command("HOST", participantId = participant.getString("id")) }
-                                Spacer(Modifier.width(8.dp))
-                                Action("撤销访问", focusKey = "revoke:${participant.getString("id")}", danger = true, textSize = 13.sp) { app.command("REVOKE", participantId = participant.getString("id")) }
-                            }
                         }
                     }
                 }

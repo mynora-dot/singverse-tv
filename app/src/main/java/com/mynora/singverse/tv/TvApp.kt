@@ -202,6 +202,9 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private var selectedAudioFormat by mutableStateOf<Format?>(null)
     var embeddedCues by mutableStateOf<List<androidx.media3.common.text.Cue>>(emptyList())
         private set
+    internal var lyrics by mutableStateOf<TvLyrics?>(null)
+        private set
+    private var lyricsJob: Job? = null
     internal val playerMode: TvPlayerMode get() = tvPlayerMode(playbackMedia.optJSONArray("streams")?.objects().orEmpty().map {
         TvPlayerStream(it.optString("kind"), attachedPicture = it.optBoolean("attached_pic") || it.optJSONObject("disposition")?.optBoolean("attached_pic") == true)
     }, observedVideo, observedAudio)
@@ -217,11 +220,13 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             it.averageBitrate.takeIf { value -> value > 0 }?.toLong() ?: 0) }
         return tvAudioQualityLabels(playbackMedia.optString("container"), stream)
     }
-    val activeAudioRole: String get() = when {
-        playbackOptions.isRoleSelected(false) -> "backing"
-        playbackOptions.isRoleSelected(true) -> "original"
-        else -> ""
-    }
+    val activeAudioRole: String
+        get() = when {
+            !playbackOptionsDelegate.isInitialized() -> ""
+            playbackOptions.isRoleSelected(false) -> "backing"
+            playbackOptions.isRoleSelected(true) -> "original"
+            else -> ""
+        }
     private val sharedFavorites = TvSharedFavorites(
         connection = { "${client.connectionGeneration}:${client.base}" },
         read = { page ->
@@ -331,6 +336,8 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     var page by mutableStateOf("首页")
     var connected by mutableStateOf(false)
+    internal var restoringConnection by mutableStateOf(client.hasSavedCredentials)
+        private set
     var error by mutableStateOf("")
     var busy by mutableStateOf(false)
     private var activeRequests = 0
@@ -415,12 +422,15 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private var audioRoleGeneration = 0
     var playing by mutableStateOf(false)
     var position by mutableLongStateOf(0)
+    internal val timedLyricPreview by derivedStateOf(structuralEqualityPolicy()) {
+        (lyrics as? TvLyrics.Timed)?.let { TextTimeline.preview(it.lines, position) }
+    }
     var duration by mutableLongStateOf(0)
     var playerState by mutableStateOf("IDLE")
     var controlVisible by mutableStateOf(false)
     var pendingConfirm by mutableStateOf<String?>(null)
     var pendingOperation by mutableStateOf<JSONObject?>(null)
-    private var loadedAttempt = ""
+    private var loadedAttempt by mutableStateOf("")
     private var reportingAttempt = ""
     private var playbackLifecycleGeneration = 0
     var foreground by mutableStateOf(true)
@@ -430,15 +440,14 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private var lastPlaybackReportAt = 0L
     private var expiredReportAttempt = ""
     private var requestGeneration = 0
-    private val dataSource = OkHttpDataSource.Factory(TvMediaTransport.client { client.credentials() })
-    private val channelProcessor = KaraokeAudioProcessor()
-    private val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
-        override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink =
-            androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setAudioCapabilities(androidx.media3.exoplayer.audio.AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES).setAudioProcessors(arrayOf(channelProcessor)).build()
-    }.apply { setEnableDecoderFallback(true) }
-    val player = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(DefaultMediaSourceFactory(dataSource)).build()
-    val playbackOptions = PlaybackOptions(context, player, channelProcessor)
-    init {
+    private val dataSource by lazy(LazyThreadSafetyMode.NONE) { OkHttpDataSource.Factory(TvMediaTransport.client { client.credentials() }) }
+    private val channelProcessor by lazy(LazyThreadSafetyMode.NONE) { KaraokeAudioProcessor() }
+    private val playerDelegate: Lazy<ExoPlayer> = lazy(LazyThreadSafetyMode.NONE) {
+        val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+            override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink =
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setAudioCapabilities(androidx.media3.exoplayer.audio.AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES).setAudioProcessors(arrayOf(channelProcessor)).build()
+        }.apply { setEnableDecoderFallback(true) }
+        val player = ExoPlayer.Builder(context, renderers).setMediaSourceFactory(DefaultMediaSourceFactory(dataSource)).build()
         player.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
         player.setHandleAudioBecomingNoisy(true)
         player.addListener(object : Player.Listener {
@@ -450,7 +459,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                     if (group.type == C.TRACK_TYPE_AUDIO) (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it) } else null
                 }
                 playbackOptions.refreshTracks()
-                playbackOptions.setAudioOnly(playerMode == TvPlayerMode.AUDIO)
+                playbackOptions.selectDefaultSubtitle()
                 if(selectedSourceId.isNotBlank() && playbackOptions.selectSource(selectedSourceId))selectedSourceId=""
             }
             override fun onPlaybackStateChanged(state: Int) {
@@ -474,7 +483,15 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                 } else playbackFailed("此素材播放失败，可重试或跳过。${exception.errorCodeName}")
             }
         })
-        if (client.token.isNotEmpty()) run { connect() }
+        player
+    }
+    val player: ExoPlayer by playerDelegate
+    internal val initializedPlayer: ExoPlayer? get() = if (playerDelegate.isInitialized()) player else null
+    private val playbackOptionsDelegate = lazy(LazyThreadSafetyMode.NONE) { PlaybackOptions(context, player, channelProcessor) }
+    val playbackOptions by playbackOptionsDelegate
+
+    init {
+        if (restoringConnection) scope.launch { restoreConnection() }
         scope.launch { while (isActive) { delay(30000); if (connected && foreground && !sharedFavorites.loading) sharedFavorites.load() } }
         scope.launch { while (isActive) {
             val waitMs = snapshotWaitMs()
@@ -487,9 +504,10 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         scope.launch { while (isActive) { delay(10000); val id=transcodeId;if(connected && id.isNotBlank()) runCatching { json("/api/v1/tv/transcoding/$id") } } }
         scope.launch { while (isActive) {
             delay(200)
-            position = player.currentPosition.coerceAtLeast(0) + timelineOffset
-            duration = originalPlaybackDurationMs(sourceDuration, player.duration, timelineOffset, player.isCurrentMediaItemDynamic, player.isCurrentMediaItemLive) ?: 0
-            playbackOptions.tick(position)
+            initializedPlayer?.let { player ->
+                position = player.currentPosition.coerceAtLeast(0) + timelineOffset
+                duration = originalPlaybackDurationMs(sourceDuration, player.duration, timelineOffset, player.isCurrentMediaItemDynamic, player.isCurrentMediaItemLive) ?: 0
+            }
             playbackClock.sample(actuallyPlaying())
             val interval = if (actuallyPlaying()) 5000 else 15000
             if (connected && reportingAttempt.isNotEmpty() && SystemClock.elapsedRealtime() - lastPlaybackReportAt >= interval) report()
@@ -520,15 +538,22 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         if(resource.has("subtitleUrl")) builder.setSubtitleConfigurations(listOf(MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(client.base+resource.getString("subtitleUrl"))).setMimeType(MimeTypes.TEXT_VTT).setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build()))
         return builder.build()
     }
-    private suspend fun loadResource(song: String, startMs: Long = 0, force: Boolean = false): JSONObject {
+    private suspend fun loadResource(
+        song: String,
+        startMs: Long = 0,
+        force: Boolean = false,
+        switchableAudio: Boolean = true,
+    ): JSONObject {
         val job = currentCoroutineContext()[Job]
         if (resourceJob !== job) resourceJob?.cancel()
         resourceJob = job
         val turn = ++resourceGeneration
         val connection = client.credentials()
         releaseExecution()
-        val body = JSONObject().put("songId",song).put("client",PlaybackCapabilities.report(compatiblePlayback || force)).put("quality",playbackQuality)
-            .put("start",startMs/1000.0).put("force",force).put("audioRole",requestedAudioRole)
+        val body = JSONObject()
+            .put("songId", song).put("client", PlaybackCapabilities.report(compatiblePlayback || force))
+            .put("quality", playbackQuality).put("start", startMs / 1000.0).put("force", force)
+            .put("audioRole", requestedAudioRole).put("switchableAudio", switchableAudio)
         var resource = json("/api/v1/tv/playback-resources", "POST", body)
         val initialAudio=resource.optJSONObject("audioRoles")
         val initialBackingResource = resource.optString("backingUrl")
@@ -562,12 +587,15 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         resource.put("revision",revision)
         if(initialAudio!=null)resource.put("audioRoles",initialAudio)
         playbackMedia = resource.optJSONObject("execution")?.optJSONObject("media") ?: resource.optJSONObject("media") ?: JSONObject()
-        playbackOptions.setAudioOnly(playerMode == TvPlayerMode.AUDIO)
         return resource
     }
     private fun setAudioResource(resource: JSONObject) {
-        selectedSourceId=if(backingResource.isNotBlank() && requestedAudioRole=="backing") GENERATED_BACKING_SOURCE
-            else if(resource.optString("mode")=="DIRECT")resource.optJSONObject("audioRoles")?.optString(if(requestedAudioRole=="original")"originalId" else if(requestedAudioRole=="backing")"backingId" else "").orEmpty() else ""
+        val roles = resource.optJSONObject("audioRoles")
+        selectedSourceId = when (requestedAudioRole) {
+            "original" -> roles?.optString("originalId").orEmpty()
+            "backing" -> if (backingResource.isNotBlank()) GENERATED_BACKING_SOURCE else roles?.optString("backingId").orEmpty()
+            else -> ""
+        }
         val factory=DefaultMediaSourceFactory(dataSource)
         if(backingResource.isNotBlank()){
             // Keep both audio sources in the same timeline after the first accompaniment load.
@@ -576,29 +604,21 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             val backing=factory.createMediaSource(MediaItem.Builder().setUri(client.base+backingResource).setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(timelineOffset).build()).build())
             player.setMediaSource(androidx.media3.exoplayer.source.MergingMediaSource(true,original,backing))
         }else player.setMediaItem(mediaItem(resource))
-        resource.optJSONObject("audioRoles")?.let { playbackOptions.applyShared(it) }
-    }
-    fun saveAudioRole(original: Boolean)=run {
-        val song=snapshot.optJSONObject("playback")?.optString("songId") ?: return@run
-        val tracks=playbackOptions.tracks.filter { it.type==androidx.media3.common.C.TRACK_TYPE_AUDIO }
-        val selected=tracks.firstOrNull { it.selected } ?: error("尚未识别音轨")
-        if(tracks.size==1 && selected.channels==2 && playbackOptions.channel in listOf("LEFT","RIGHT")){playbackOptions.markRole(original);return@run}
-        val other=tracks.firstOrNull { it.sourceId.isNotBlank() && it.sourceId!=selected.sourceId } ?: error("需要两条已识别源音轨")
-        require(selected.sourceId.isNotBlank()) { "请先完成媒体探测" }
-        val path="/api/v1/tv/audio-roles/songs/$song"
-        val current=json(path)
-        val saved=json(path,"PUT",JSONObject().put("revision",current.getLong("revision")).put("originalId",if(original)selected.sourceId else other.sourceId).put("backingId",if(original)other.sourceId else selected.sourceId))
-        playbackOptions.applyShared(saved)
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .build()
+        roles?.let { playbackOptions.applyShared(it) }
     }
     fun useAudioRole(original: Boolean) { run { applyAudioRole(original) } }
     private suspend fun applyAudioRole(original: Boolean) = audioRoleLock.withLock {
         ++audioRoleGeneration
         require(canUseAudioRole(original)) { "此歌曲没有可用的${if (original) "原唱" else "伴奏"}" }
         requestedAudioRole = if (original) "original" else "backing"
+        selectedSourceId = ""
         if (!playbackOptions.isRoleSelected(original) && !playbackOptions.useRole(original)) {
             val role = if (original) playbackOptions.roleOriginal else playbackOptions.roleBacking
             require(!playbackOptions.isChannelRole(role)) { "此版本的本机声道标记已失效" }
-            rebuildPlayback(followPosition = true)
+            rebuildPlayback(followPosition = true, switchableAudio = false)
         }
     }
     private suspend fun awaitPrepared(sessionId: String, attempt: String) {
@@ -619,7 +639,12 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         val local = if (transcodeId.isBlank()) target else localPlaybackPosition(target, timelineOffset, player.duration, player.isCurrentMediaItemSeekable)
         if (local != null) player.seekTo(local) else rebuildPlayback(startMs = target)
     }
-    private suspend fun rebuildPlayback(force: Boolean = recovery.forceCompatibility, startMs: Long = position, followPosition: Boolean = false) {
+    private suspend fun rebuildPlayback(
+        force: Boolean = recovery.forceCompatibility,
+        startMs: Long = position,
+        followPosition: Boolean = false,
+        switchableAudio: Boolean = true,
+    ) {
         if (!hasConfirmedPlayback || snapshot.optString("status") != "ACTIVE") return
         val sessionId = snapshot.optString("id")
         val attempt = loadedAttempt
@@ -627,7 +652,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         val previousOffset = timelineOffset
         resourceChanging = true; resourceFailed = false; playerState = "PREPARING"; error = ""
         try {
-            val resource = loadResource(song,startMs,force)
+            val resource = loadResource(song, startMs, force, switchableAudio)
             if (snapshot.optString("id") != sessionId || !hasConfirmedPlayback || loadedAttempt != attempt || snapshot.optString("status") != "ACTIVE") {
                 releaseExecution()
                 throw CancellationException("播放实例已更换")
@@ -691,40 +716,95 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         if (previousAttempt.isNotBlank() && previousAttempt != value.optJSONObject("playback")?.optString("attemptId")) {
             remoteCommandJob?.cancel(); remoteCommandId = ""
             resourceGeneration++; resourceJob?.cancel(); pendingLoadCommand = ""
+            clearLyrics()
         }
         if (value.optString("id") != snapshot.optString("id") || value.optString("status") != "ACTIVE") clearPartyConnection()
         receiveReactions(value)
         snapshot=value
     }
-    private suspend fun json(path: String, method: String = "GET", body: JSONObject? = null): JSONObject {
-        val server=client.base;val credential=client.token
-        val result=JSONObject(client.request(path,method,body))
-        if(client.base!=server || client.token!=credential)throw CancellationException("连接已更换")
+    private suspend fun json(
+        path: String,
+        method: String = "GET",
+        body: JSONObject? = null,
+        connection: Pair<String, String> = client.credentials(),
+    ): JSONObject {
+        if (client.credentials() != connection) throw CancellationException("连接已更换")
+        val result = JSONObject(client.request(path, method, body, connection))
+        if (client.credentials() != connection) throw CancellationException("连接已更换")
         return result
     }
-    fun connect() = run {
+
+    private suspend fun restoreConnection() {
+        try {
+            connectSavedSession(restoreSaved = true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            error = "暂时无法连接上次的 NAS，请检查网络后重新连接"
+        } finally {
+            restoringConnection = false
+        }
+    }
+
+    fun connect() = run { connectSavedSession() }
+
+    private suspend fun connectSavedSession(restoreSaved: Boolean = false) {
         val previous = client.credentials()
-        try { establishConnection() }
+        val generation = client.connectionGeneration
+        try { establishConnection(restoreSaved) }
         catch (failure: TvHttpException) {
-            if (failure.status == 401 && !connected && client.credentials() == previous) {
+            if (failure.status == 401 && !connected && client.connectionGeneration == generation &&
+                (restoreSaved || client.credentials() == previous)) {
                 client.clear()
                 resetHomeActivity()
-                error = ""
+                error = if (restoreSaved) "上次的登录已失效，请重新连接 NAS" else ""
                 login.open(LoginPage.METHODS)
             } else throw failure
         }
     }
-    private suspend fun establishConnection() {
-        val info = json("/api/v1/server-info")
-        require(info.optString("service") == "singverse" && info.optInt("apiVersion") == 1) { "不是兼容的 SingVerse 服务" }
-        acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession = true)
-        if (!connected) {
-            acceptSnapshot(json("/api/v1/tv/sessions/${snapshot.getString("id")}/recover", "POST"))
-            page = "首页"
+
+    private data class SessionHandshake(
+        val serverName: String,
+        val instanceId: String,
+        val session: JSONObject,
+        val recovered: JSONObject?,
+        val capabilities: JSONObject,
+    )
+
+    private suspend fun establishConnection(restoreSaved: Boolean = false) {
+        val recover = !connected
+        val generation = client.connectionGeneration
+        // Keep keystore, requests and parsing off the UI thread until the session is ready to publish.
+        val handshake = withContext(Dispatchers.IO) {
+            if (restoreSaved && !client.restoreCredentials()) return@withContext null
+            val connection = client.credentials()
+            val info = json("/api/v1/server-info", connection = connection)
+            require(info.optString("service") == "singverse" && info.optInt("apiVersion") == 1) { "不是兼容的 SingVerse 服务" }
+            val session = json("/api/v1/tv/sessions", "POST", connection = connection)
+            val sid = session.getString("id")
+            val recovered = if (recover) json("/api/v1/tv/sessions/$sid/recover", "POST", connection = connection) else null
+            SessionHandshake(
+                serverName = info.optString("name"),
+                instanceId = if (info.isNull("instanceId")) "" else info.optString("instanceId"),
+                session = session,
+                recovered = recovered,
+                capabilities = requestPartyCapabilities(sid, connection),
+            )
         }
-        declarePartyCapabilities()
-        // Finish the required handshake before removing the login screen and its lifecycle.
-        loadHome()
+        if (client.connectionGeneration != generation) throw CancellationException("连接已更换")
+        if (handshake == null) {
+            error = "上次的登录已失效，请重新连接 NAS"
+            return
+        }
+        client.authorizeArtworkCache(handshake.instanceId, generation)
+        acceptSnapshot(handshake.session, replaceSession = true)
+        handshake.recovered?.let { acceptSnapshot(it) }
+        acceptSnapshot(handshake.capabilities)
+        if (recover) page = "首页"
+        if (restoreSaved) {
+            // The session handshake already validated the saved credential. Refresh the catalog after entering Home.
+            serverName = handshake.serverName.ifBlank { "SingVerse" }
+        } else loadHome()
         login.recordSuccess(client.base, serverName)
         connected = true; online = true; failureCount = 0; error = ""
         refreshFavorites()
@@ -733,10 +813,12 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         ensureInvitation()
         run { loadSongs(); loadTags() }
     }
-    private suspend fun declarePartyCapabilities() {
-        val sid = snapshot.getString("id")
-        acceptSnapshot(json("/api/v1/tv/sessions/$sid/capabilities", "POST", JSONObject().put("capabilities", JSONArray(listOf("AUTO_ADVANCE", "SEEK", "AUDIO_ROLE", "APPLY_AUDIO_ROLES", "REACTIONS")))))
-    }
+    private suspend fun requestPartyCapabilities(sid: String, connection: Pair<String, String> = client.credentials()): JSONObject = json(
+        "/api/v1/tv/sessions/$sid/capabilities",
+        "POST",
+        JSONObject().put("capabilities", JSONArray(listOf("AUTO_ADVANCE", "SEEK", "AUDIO_ROLE", "APPLY_AUDIO_ROLES", "REACTIONS"))),
+        connection,
+    )
     private fun snapshotWaitMs(): Int {
         if (!connected || !online || !foreground || snapshot.optString("status") != "ACTIVE" || !snapshot.has("stateRevision")) return 0
         val limit = snapshot.optInt("snapshotWaitMs", 0)
@@ -777,13 +859,14 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     private fun refreshSessionMetadata() {
         if (!connected || !online || !foreground || sessionMetadataJob?.isActive == true) return
         val now = SystemClock.elapsedRealtime()
-        if (participantsKnown && now - lastParticipantsRefresh < 5000 && now - lastLibraryRefresh <= 30000) return
+        val libraryDue = lastLibraryRefresh == 0L || now - lastLibraryRefresh > 30000
+        if (participantsKnown && now - lastParticipantsRefresh < 5000 && !libraryDue) return
         val sid = snapshot.optString("id")
         if (sid.isBlank()) return
         sessionMetadataJob = scope.launch {
             try {
                 if (!participantsKnown || SystemClock.elapsedRealtime() - lastParticipantsRefresh >= 5000) refreshParticipants(sid)
-                if (SystemClock.elapsedRealtime() - lastLibraryRefresh > 30000) {
+                if (libraryDue) {
                     if (page == "首页") loadHome()
                     if (page == "分类") loadTags()
                     if (page == "歌单") {
@@ -847,6 +930,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         homePlaylists = result.optJSONArray("featuredPlaylists")?.objects().orEmpty()
         homeTotal = result.getLong("totalSongs")
         serverName = result.getJSONObject("server").optString("name", "SingVerse")
+        lastLibraryRefresh = SystemClock.elapsedRealtime()
     }
     suspend fun loadTags() {
         val server = client.base; val credential = client.token
@@ -1010,6 +1094,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
     fun reconnect() = run { refresh() }
     fun retryPlayback() {
         if (hasConfirmedPlayback) {
+            if (lyrics == null) snapshot.optJSONObject("playback")?.optString("songId")?.let(::loadLyrics)
             resumeAfterPreparation = true; error = ""
             if (resourceFailed) run { rebuildPlayback() } else { player.prepare(); player.play() }
             return
@@ -1031,8 +1116,6 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             }
         }
     }
-    fun reloadText() = run { val songId = snapshot.optJSONObject("playback")?.optString("songId") ?: return@run; loadText(songId) }
-    private suspend fun loadText(songId: String) { playbackOptions.beginTextRead(songId); try { playbackOptions.applyText(songId, json("/api/v1/tv/library/songs/$songId/text-tracks")) } catch (e: Exception) { if (e is CancellationException) throw e; playbackOptions.textFailed(songId) } }
     fun retryPending() = run {
         val body = pendingOperation ?: return@run
         val homeDetail = pendingHomeAdd?.takeIf { it.first === body }?.second
@@ -1063,6 +1146,36 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             }
         }
     }
+    private fun clearLyrics() {
+        lyricsJob?.cancel()
+        lyricsJob = null
+        lyrics = null
+        embeddedCues = emptyList()
+    }
+    private fun loadLyrics(songId: String) {
+        clearLyrics()
+        lyrics = TvLyrics.Loading
+        playbackOptions.setEmbeddedSubtitlesEnabled(false)
+        lyricsJob = scope.launch {
+            val resolved = try {
+                withContext(Dispatchers.Default) {
+                    val items = json("/api/v1/tv/library/songs/${android.net.Uri.encode(songId)}/text-tracks").getJSONArray("items")
+                    val tracks = (0 until items.length()).asSequence().mapNotNull { index ->
+                        val item = items.optJSONObject(index) ?: return@mapNotNull null
+                        val text = item.opt("text") as? String ?: return@mapNotNull null
+                        item.optString("format") to text
+                    }
+                    selectTvLyrics(tracks)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                TvLyrics.Embedded
+            }
+            lyrics = resolved
+            if (resolved == TvLyrics.Embedded) playbackOptions.setEmbeddedSubtitlesEnabled(true)
+        }
+    }
     private fun prepareCommand(command: JSONObject, playback: JSONObject, sessionId: String, resume: Boolean = foreground) {
         if (snapshot.optString("id") != sessionId || snapshot.optString("status") != "ACTIVE" ||
             snapshot.optJSONObject("playback")?.optString("attemptId") != playback.optString("attemptId") ||
@@ -1073,7 +1186,8 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         playbackClock.sample(false)
         // Stop callbacks belong to the previous media, including retries of this same attempt.
         reportingAttempt = ""
-        loadedAttempt = ""; player.stop(); player.playWhenReady = false
+        loadedAttempt = ""
+        initializedPlayer?.apply { stop(); playWhenReady = false }
         val generation = ++currentSongGeneration
         val songId = playback.getString("songId")
         val attempt = playback.getString("attemptId")
@@ -1084,7 +1198,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         resumeAfterPreparation = resume && foreground
         recovery.reset()
         currentSong = snapshot.optJSONArray("queue")?.objects()?.firstOrNull { it.optJSONObject("song")?.optString("id") == songId }?.optJSONObject("song")
-        playbackMedia = JSONObject(); observedVideo = false; observedAudio = false; selectedAudioFormat = null; embeddedCues = emptyList()
+        playbackMedia = JSONObject(); observedVideo = false; observedAudio = false; selectedAudioFormat = null
         requestedAudioRole = playback.optString("audioRole"); backingResource = ""; timelineOffset = 0; sourceDuration = 0
         resourceChanging = true; resourceFailed = false
         playerState = "PREPARING"; error = ""; page = "演唱"; controlVisible = true
@@ -1092,6 +1206,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         if (playbackClock.start("${client.connectionGeneration}:$sessionId:$attempt")) { seq = 0; expiredReportAttempt = "" }
         // A confirmed LOAD owns a reporting lease even while its media request is still pending.
         report()
+        loadLyrics(songId)
         resourceJob = scope.launch {
             try {
                 val resource = loadResource(songId)
@@ -1099,14 +1214,13 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
                     throw CancellationException("播放实例已更换")
                 loadedAttempt = attempt
                 setAudioResource(resource)
+                position = player.currentPosition.coerceAtLeast(0) + timelineOffset
                 playbackOptions.beginSong(songId, resource.getString("revision"))
-                playbackOptions.setAudioOnly(playerMode == TvPlayerMode.AUDIO)
                 playbackOptions.configureSource(resource.optJSONObject("execution")?.optJSONObject("media")?.optJSONArray("streams") ?: resource.optJSONObject("media")?.optJSONArray("streams") ?: resource.optJSONObject("audioRoles")?.optJSONArray("streams"), resource.optJSONObject("execution")?.optJSONArray("trackMapping"), resource.optString("mode") == "DIRECT", backingResource.isNotBlank())
                 resource.optJSONObject("audioRoles")?.let { playbackOptions.applyShared(it) }
                 resourceChanging = false
                 player.prepare(); player.playWhenReady = resumeAfterPreparation && foreground; controlVisible = !player.playWhenReady
                 awaitPrepared(sessionId, attempt)
-                scope.launch { loadText(songId) }
                 scope.launch {
                     runCatching { json("/api/v1/tv/library/songs/$songId") }.getOrNull()?.let {
                         if (generation == currentSongGeneration && snapshot.optJSONObject("playback")?.optString("songId") == songId) currentSong = it
@@ -1151,7 +1265,7 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             if (action in listOf("PAUSE", "RESUME", "STOP")) {
                 val success = try {
                     when (action) {
-                        "PAUSE" -> { resumeAfterPreparation = false; player.pause(); if (reportingAttempt.isNotBlank()) playerState = "PAUSED" }
+                        "PAUSE" -> { resumeAfterPreparation = false; initializedPlayer?.pause(); if (reportingAttempt.isNotBlank()) playerState = "PAUSED" }
                         "RESUME" -> { check(foreground) { "电视当前不在前台" }; resumeAfterPreparation = true; if (loadedAttempt.isNotBlank()) player.play() else if (reportingAttempt.isNotBlank()) playerState = "PREPARING" }
                         "STOP" -> { remoteCommandJob?.cancel(); remoteCommandId = ""; stopLocal(); loadedAttempt = ""; playerState = "IDLE" }
                     }
@@ -1270,15 +1384,32 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
             withTimeoutOrNull(3000) { runCatching { client.request("/api/v1/tv/sessions/$sessionId/playback-events", "POST", event, connection) } }
         }
     }
-    fun foreground() { foreground = true;refreshFavorites();playbackOptions.refreshRoutes();resumeUpdateInstallation();if(connected){if (page == "首页") refreshHomeActivity() else if (page == "历史记录") refreshHomeHistory() else if (page == "热门歌曲") refreshHomePopular();reconnect();checkUpdate(manual = false)} }
+    fun foreground() {
+        foreground = true
+        refreshFavorites()
+        if (playbackOptionsDelegate.isInitialized()) playbackOptions.refreshRoutes()
+        resumeUpdateInstallation()
+        if (connected) {
+            when (page) {
+                "首页" -> refreshHomeActivity()
+                "历史记录" -> refreshHomeHistory()
+                "热门歌曲" -> refreshHomePopular()
+            }
+            reconnect()
+            checkUpdate(manual = false)
+        }
+    }
     fun background() { playbackLifecycleGeneration++; reactionCursor.reset(); partyReactions = emptyList(); foreground = false; login.pausePairing(); pauseLocal() }
-    fun pauseLocal() { resumeAfterPreparation = false; player.pause(); report() }
+    fun pauseLocal() { resumeAfterPreparation = false; initializedPlayer?.pause(); report() }
     fun stopLocal() {
         playbackLifecycleGeneration++; resourceGeneration++; audioRoleGeneration++
         failedLoadCommand = pendingLoadCommand; resourceJob?.cancel(); resourceJob = null
         pendingLoadCommand = ""; lastLoadCommand = null; lastLoadSessionId = ""
         resumeAfterPreparation = false; resourceChanging = false
-        releaseExecution(); player.stop(); player.playWhenReady = false; playerState = "IDLE"
+        releaseExecution()
+        initializedPlayer?.apply { stop(); playWhenReady = false }
+        playerState = "IDLE"
+        clearLyrics()
         report()
         reportingAttempt = ""
     }
@@ -1316,6 +1447,21 @@ class TvApp(context: android.content.Context, pairingLifetimeMillis: Long = 300_
         lastParticipantsRefresh = 0
     }
     fun disconnect() { resetHomeActivity(); sharedFavorites.reset(); currentSongGeneration++; currentSong=null; playbackMedia=JSONObject(); observedVideo=false; observedAudio=false; selectedAudioFormat=null; embeddedCues=emptyList(); login.open(LoginPage.METHODS);playlistGeneration++;playlistDetail=null;playlists=emptyList();playlistPage=0;playlistQuery="";playlistTotal=0;lastPlaylistId=""; stopLocal();loadedAttempt="";pendingOperation=null;resetUpdates();online=false; client.clear(); sharedFavorites.reset(); resetHomeActivity(); connected = false; login.cancel(); snapshot = JSONObject(); clearPartyConnection(); artistDetail=null;artistDetailGeneration++;lastArtistId=""; selected = null; homeSongs = emptyList(); homePlaylists = emptyList(); songs = emptyList(); artists = emptyList(); tags = emptyList(); participants = emptyList(); homeTotal = 0; artistTotal = 0; total = 0; query = ""; artistQuery = ""; number = 0; artistPage = 0; artistId = ""; selectedTags = emptySet(); unclassified = false; requestGeneration++; artistGeneration++; detailGeneration++ }
-    fun newSession() = run { acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession=true); declarePartyCapabilities(); ensureInvitation() }
-    fun close() { resetUpdates(); releasePlaybackHistory(); login.close(); resourceGeneration++; releaseExecution(); discovery.stop(); playbackOptions.close(); scope.cancel(); player.release() }
+    fun newSession() = run {
+        acceptSnapshot(json("/api/v1/tv/sessions", "POST"), replaceSession = true)
+        acceptSnapshot(requestPartyCapabilities(snapshot.getString("id")))
+        ensureInvitation()
+    }
+    fun close() {
+        resetUpdates()
+        releasePlaybackHistory()
+        login.close()
+        resourceGeneration++
+        releaseExecution()
+        discovery.stop()
+        if (playbackOptionsDelegate.isInitialized()) playbackOptions.close()
+        client.releaseArtwork()
+        scope.cancel()
+        initializedPlayer?.release()
+    }
 }

@@ -468,6 +468,10 @@ internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.c
     )
 }
 
+internal fun JSONObject?.artworkVersion(field: String = "coverVersion"): String =
+    this?.optString(field)?.takeIf { it.isNotBlank() && it != "null" }
+        ?: this?.optString("revision").orEmpty()
+
 @Composable internal fun SongArtwork(
     app: TvApp,
     song: JSONObject?,
@@ -475,13 +479,13 @@ internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.c
     contentScale: androidx.compose.ui.layout.ContentScale = androidx.compose.ui.layout.ContentScale.Crop,
     shape: Shape = TvShape.control,
 ) {
-    val server = app.client.base
+    val scope = app.client.artworkScope
     val path = song?.optString("coverPath").orEmpty()
-    val revision = song?.optString("revision").orEmpty()
+    val revision = song.artworkVersion()
     val seed = song?.optString("id").orEmpty().ifBlank { song?.optString("title").orEmpty() }
     val (c1, c2) = remember(seed) { fallbackAmbientColors(seed) }
-    var bitmap by remember(server, path, revision) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(server, path, revision) {
+    var bitmap by remember(scope, path, revision) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(scope, path, revision) {
         if (path.isNotEmpty()) bitmap = try {
             app.client.image(path, revision)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -684,14 +688,15 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
 }
 
 @Composable internal fun CategoryCard(app: TvApp, tag: JSONObject, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val scope = app.client.artworkScope
+    val path = tag.optString("coverPath")
+    val revision = tag.artworkVersion()
     var focused by remember { mutableStateOf(false) }
-    var bitmap by remember(tag.optString("id")) { mutableStateOf<Bitmap?>(null) }
-    var failed by remember { mutableStateOf(false) }
-    LaunchedEffect(tag.optString("id"), tag.optString("coverVersion"), app.client.base) {
-        bitmap = null; failed = false
-        val path = tag.optString("coverPath")
+    var bitmap by remember(scope, path, revision) { mutableStateOf<Bitmap?>(null) }
+    var failed by remember(scope, path, revision) { mutableStateOf(false) }
+    LaunchedEffect(scope, path, revision) {
         if (path.isNotBlank()) {
-            bitmap = try { app.client.image(path, tag.optString("coverVersion")) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { null }
+            bitmap = try { app.client.image(path, revision) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { null }
             failed = bitmap == null
         }
     }
@@ -746,17 +751,19 @@ internal fun JSONObject.artists(): String = optJSONArray("artists")?.let { array
 }
 
 @Composable internal fun ArtistArtwork(app: TvApp, artist: JSONObject, kind: String, modifier: Modifier) {
-    var bitmap by remember(artist.optString("id"), kind) { mutableStateOf<Bitmap?>(null) }
-    var derived by remember(artist.optString("id"), kind) { mutableStateOf(false) }
+    val scope = app.client.artworkScope
+    val path = artist.optString(kind + "Path")
+    val revision = artist.artworkVersion(kind + "Version")
+    val portraitPath = artist.optString("portraitPath")
+    val portraitVersion = artist.artworkVersion("portraitVersion")
+    var bitmap by remember(scope, path, revision, portraitPath, portraitVersion) { mutableStateOf<Bitmap?>(null) }
+    var derived by remember(scope, path, revision, portraitPath, portraitVersion) { mutableStateOf(false) }
     val (c1, c2) = remember(artist.optString("id")) { fallbackAmbientColors(artist.optString("id")) }
-    LaunchedEffect(artist.optString("id"), artist.optString(kind + "Version"), artist.optString("portraitVersion"), app.client.base) {
-        bitmap = null; derived = false
-        val path = artist.optString(kind + "Path")
-        if (path.isNotBlank()) bitmap = try { app.client.image(path, artist.optString(kind + "Version")) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { null }
+    LaunchedEffect(scope, path, revision, portraitPath, portraitVersion) {
+        if (path.isNotBlank()) bitmap = try { app.client.image(path, revision) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { null }
         if (kind == "background" && bitmap == null) {
-            val portraitPath = artist.optString("portraitPath")
             if (portraitPath.isNotBlank()) {
-                val portrait = try { app.client.image(portraitPath, artist.optString("portraitVersion")) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { null }
+                val portrait = try { app.client.image(portraitPath, portraitVersion) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { null }
                 if (portrait != null) { bitmap = withContext(Dispatchers.Default) { softenedArtistBackground(portrait) }; derived = true }
             }
         }
@@ -897,7 +904,7 @@ internal fun softenedArtistBackground(source: Bitmap): Bitmap {
             ) {
                 SongArtwork(
                     app,
-                    JSONObject(playlist.toString()).put("revision", playlist.optString("coverVersion")),
+                    playlist,
                     Modifier.fillMaxSize(),
                     shape = coverShape,
                 )

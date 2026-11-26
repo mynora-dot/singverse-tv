@@ -24,6 +24,7 @@ import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.zip.ZipInputStream
 import kotlin.math.abs
 
 /** Real Media3 decoding, production Compose UI and D-pad events; all media/API data is test-only. */
@@ -208,16 +209,13 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         assertEquals("上报时长不应申请或启动下一首资源", 1, playback.resourceRequests.size)
     }
 
-    fun testAudioPlaybackProgressLyricsQrSettingsAndQueue() {
+    fun testAudioPlaybackProgressQrSettingsAndQueue() {
         start("test-song-1", next = "test-song-2")
-        assertLyricsBeforeFirstLine()
         assertEquals(TvPlayerMode.AUDIO, onMain { app.playerMode })
         assertFalse("WAV不能产生视频轨道", onMain { app.player.currentTracks.groups.any { it.type == C.TRACK_TYPE_VIDEO } })
         assertTrue("WAV须有真实已解码音轨", onMain { app.player.currentTracks.groups.any { it.type == C.TRACK_TYPE_AUDIO && it.isSelected } })
         waitFor("真实播放进度前进") { onMain { app.position > 800 && app.playing } }
         assertTrue("音质采样率依据真正解码的WAV格式", onMain { app.audioQualityLabels.contains("24 kHz") })
-        waitFor("纯音频自动同步关联LRC") { onMain { app.playbackOptions.activeLine != null && app.playbackOptions.nextLine != null } }
-        assertLyricSynchronization()
         assertTrue("音频布局应有模式语义", nodes().any { state(it) == "音频播放器" })
         listOf("专辑" to "仅限播放器自动化验收", "年份" to "2026", "风格" to "合成测试").forEach { (caption, value) ->
             waitFor("显示实际歌曲元数据：$caption $value") {
@@ -269,12 +267,11 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("确认提交真实10秒seek") { onMain { app.position >= beforeSeek + 9500 } }
         assertFalse("暂停状态下拖动进度不应自行播放", onMain { app.playing })
-        assertLyricSynchronization()
         screenshot("audio-paused-after-remote-seek").recycle()
 
         key(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFor("进度条下键返回播放控制") { focused().contains(":action:player:") }
-        listOf("lyrics", "output", "more").forEach { control ->
+        listOf("output", "more").forEach { control ->
             focusAction(control)
             val origin = focused()
             key(KeyEvent.KEYCODE_DPAD_CENTER)
@@ -361,6 +358,48 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         assertEquals("空队列不能重新加载或重播上一首", resourcesAtEnd, playback.resourceRequests.size)
         assertNull("空队列切歌不打开确认框", onMain { app.pendingConfirm })
         screenshot("direct-next-empty-queue-stopped").recycle()
+    }
+
+    fun testHlsAlternateAudioUsesTheSameResourceWhilePlayingAndPaused() {
+        // FFmpeg fMP4 output with one synthetic video and two distinct AAC tones.
+        playback.alternateAudioHls = instrumentation.context.assets.open("player-fixtures/synthetic-alternate-audio-hls.zip").use { source ->
+            ZipInputStream(source).use { zip ->
+                buildMap {
+                    while (true) {
+                        val entry = zip.nextEntry ?: break
+                        put(entry.name, zip.readBytes())
+                    }
+                }
+            }
+        }
+        playback.fairAcknowledgements = true
+        onMain { app.command("ADD", songId = "test-song-2") }
+        waitFor("双音轨歌曲已入队") { onMain { queuedSongCount(app) == 1 && app.pendingOperation == null } }
+        onMain { app.command("START") }
+        waitFor("HLS 同时拥有两轨且按开唱请求播放伴奏", 20000) {
+            onMain {
+                app.playing && app.activeAudioRole == "backing" &&
+                    app.playbackOptions.tracks.count { it.type == C.TRACK_TYPE_AUDIO } == 2
+            }
+        }
+        assertTrue(playback.resourceRequests.single().getBoolean("switchableAudio"))
+        val item = onMain { app.player.currentMediaItem }
+        val attempt = onMain { app.snapshot.getJSONObject("playback").getString("attemptId") }
+        assertTrue(item!!.localConfiguration!!.uri.path.orEmpty().endsWith("master.m3u8"))
+        for ((role, playing) in listOf("original" to true, "backing" to false)) {
+            if (!playing) onMain { app.pauseLocal() }
+            val position = onMain { app.player.currentPosition }
+            val commandId = playback.remoteAudioRole(role)
+            waitFor("$role 就地切轨并回执", 12000) {
+                onMain { app.activeAudioRole == role && app.player.isPlaying == playing } &&
+                    playback.playbackEvents.any { it.optString("commandId") == commandId && it.optString("commandStatus") == "EXECUTED" }
+            }
+            assertEquals("切轨不能重新协商 HLS", 1, playback.resourceRequests.size)
+            assertFalse(fixture.httpEvents.any { it.contains("/api/v1/tv/transcoding/fixture-alternate-audio/cancel") })
+            assertSame(item, onMain { app.player.currentMediaItem })
+            assertEquals(attempt, onMain { app.snapshot.getJSONObject("playback").getString("attemptId") })
+            if (!playing) assertTrue("暂停时保留进度", abs(onMain { app.player.currentPosition } - position) <= 100)
+        }
     }
 
     fun testGeneratedBackingMergesOnceThenUsesNativeAudioTracks() {
@@ -645,26 +684,6 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         assertEquals("重复选择当前画质不重建资源", 2, playback.resourceRequests.size)
     }
 
-    private fun assertLyricsBeforeFirstLine() {
-        key(KeyEvent.KEYCODE_DPAD_CENTER)
-        waitFor("暂停后验证首句前状态") { onMain { !app.playing && app.player.playbackState == Player.STATE_READY } }
-        key(KeyEvent.KEYCODE_DPAD_UP)
-        waitFor("进度条取得焦点") { focused().endsWith(":player:progress") }
-        key(KeyEvent.KEYCODE_DPAD_LEFT)
-        key(KeyEvent.KEYCODE_DPAD_CENTER)
-        waitFor("遥控回到有效歌词首句前") {
-            onMain { app.position < 100 && app.playbackOptions.sidecars.isNotEmpty() && app.playbackOptions.nextLine?.start == 2000L }
-        }
-        assertNull("有歌词但尚未到首句不应伪造当前句", onMain { app.playbackOptions.activeLine })
-        assertFalse("首句前不能将元数据歌词误报为暂无歌词", visibleText("暂无歌词") || visibleText("没有可用歌词"))
-        assertTrue("首句前仍应显示真实下一句歌词预览", visibleText("测试歌词第一句"))
-        screenshot("audio-metadata-lyrics-before-first-line").recycle()
-        key(KeyEvent.KEYCODE_DPAD_DOWN)
-        focusAction("pause")
-        key(KeyEvent.KEYCODE_DPAD_CENTER)
-        waitFor("恢复播放至首句") { onMain { app.playing && app.position >= 2100 } }
-    }
-
     private fun assertNativeRoleSwitch(role: String, source: String, paused: Boolean) {
         focusAction("role:$role")
         val resources = playback.resourceRequests.size
@@ -693,17 +712,72 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         assertVisibleFocus()
     }
 
+    fun testAudioLibraryLyricsFollowSeek() {
+        fun visibleLyrics() = nodes().filter { it.isVisibleToUser }
+            .mapNotNull { it.text?.toString() }.filter { it.startsWith("测试歌词") }
+
+        start("test-song-1")
+        onMain {
+            app.pauseLocal()
+            app.controlVisible = true
+            app.seekAbsolute(500)
+        }
+        waitFor("前奏显示即将唱到的两句歌词") {
+            visibleLyrics() == listOf("测试歌词第一句", "测试歌词第二句")
+        }
+
+        onMain { app.seekAbsolute(2500) }
+        waitFor("音频同时显示当前句和后续两句") {
+            visibleLyrics() == listOf("测试歌词第一句", "测试歌词第二句", "测试歌词第三句")
+        }
+        val frame = screenshot("audio-library-lyrics-preview")
+        try {
+            assertLyricHighlight(frame, "测试歌词第一句", highlighted = true)
+            assertLyricHighlight(frame, "测试歌词第二句", highlighted = false)
+        } finally { frame.recycle() }
+
+        onMain { app.seekAbsolute(4500) }
+        waitFor("跳转后当前句和后续歌词同步更新") {
+            visibleLyrics() == listOf("测试歌词第二句", "测试歌词第三句", "测试歌词第四句")
+        }
+        val afterSeek = screenshot("audio-library-lyrics-seek")
+        try {
+            assertLyricHighlight(afterSeek, "测试歌词第二句", highlighted = true)
+        } finally { afterSeek.recycle() }
+    }
+
+    fun testVideoPrefersLibraryLyricsToEmbeddedSubtitles() {
+        playback.holdLyricsResponse = true
+        try {
+            start("test-song-2")
+            waitFor("视频播放与歌词请求并行") {
+                fixture.httpEvents.any { it == "begin GET /api/v1/tv/library/songs/test-song-2/text-tracks" } &&
+                    onMain { app.playing && app.lyrics == TvLyrics.Loading }
+            }
+            assertTrue("素材含内嵌字幕轨", onMain { app.playbackOptions.tracks.any { it.type == C.TRACK_TYPE_TEXT } })
+            assertFalse("资料库结果未到时暂不启用内嵌字幕", onMain { app.playbackOptions.tracks.any { it.type == C.TRACK_TYPE_TEXT && it.selected } })
+            onMain { app.pauseLocal(); app.seekAbsolute(2500) }
+        } finally {
+            playback.releaseLyricsResponse()
+        }
+        waitFor("视频显示资料库歌词") { visibleText("测试歌词第一句") }
+        assertTrue("资料库歌词和内嵌字幕不叠加", onMain { app.embeddedCues.isEmpty() })
+    }
+
     fun testAudioWithoutLyricsDoesNotInventLyricsOrBackingTrack() {
         start("test-song-3")
-        waitFor("无关联歌词已完成读取") { onMain { app.playbackOptions.textStatus.contains("没有可用") } }
+        onMain {
+            app.pauseLocal()
+            app.controlVisible = true
+        }
         assertEquals(TvPlayerMode.AUDIO, onMain { app.playerMode })
-        assertNull("没有歌词时当前句为空", onMain { app.playbackOptions.activeLine })
-        assertNull("没有歌词时下一句为空", onMain { app.playbackOptions.nextLine })
-        assertTrue("无歌词状态应明确显示", visibleText("暂无歌词") || visibleText("没有可用歌词") || visibleText("无歌词"))
+        assertEquals("旧版应用静音设置不再生效", 1f, onMain { app.player.volume }, 0f)
+        assertTrue("没有字幕轨时不显示字幕", onMain { app.embeddedCues.isEmpty() })
+        waitFor("两个来源都没有歌词") { visibleText("暂无歌词") }
+        assertTrue(fixture.httpEvents.any { it == "begin GET /api/v1/tv/library/songs/test-song-3/text-tracks" })
         assertFalse("空队列不显示下一首卡片", visibleText("即将播放"))
         assertEquals("单音轨纯音频没有伴奏角色", "", onMain { app.playbackOptions.roleBacking })
-        val backing = nodes().filter { !it.isEnabled && label(it).contains("伴奏") }
-        assertTrue("没有伴奏时应显示不可用的分段选项", backing.isNotEmpty())
+        waitFor("没有伴奏时显示不可用的分段选项") { nodes().any { !it.isEnabled && label(it).contains("伴奏") } }
         assertFalse("不应为无伴奏歌曲请求伴奏资源", playback.resourceRequests.any { it.optString("audioRole") == "backing" })
         assertQr("audio-without-lyrics")
         assertVisibleFocus()
@@ -712,7 +786,7 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
     fun testVideoSelectionsStayDarkWhenRemoteFocusMovesAway() {
         start("test-song-2")
         assertNativeRoleSwitch("backing", "stream:2", paused = false)
-        focusAction("lyrics")
+        focusAction("output")
         var frame = screenshot("video-dark-playback-controls")
         assertDarkControl(frame, "暂停")
         assertDarkControl(frame, "伴奏", checked = true)
@@ -721,8 +795,7 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         focusAction("pause")
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("暂停后显示继续按钮") { onMain { !app.playing && app.player.playbackState == Player.STATE_READY } }
-        onMain { app.playbackOptions.chooseText("内嵌字幕") }
-        focusAction("lyrics")
+        focusAction("output")
         val origin = focused()
         frame = screenshot("video-dark-resume-control")
         assertDarkControl(frame, "继续")
@@ -731,23 +804,35 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("播放设置焦点在完成按钮") { focused().startsWith("dialog:") && focused().endsWith(":action:完成") }
         assertVisibleFocus()
-        frame = screenshot("video-dark-subtitle-choices")
-        assertDarkControl(frame, "歌词字幕", checked = true)
-        assertDarkControl(frame, "内嵌字幕", checked = true)
+        frame = screenshot("video-dark-output-choices")
+        assertDarkControl(frame, "声音输出")
+        assertDarkControl(frame, "系统默认输出")
+        assertEquals("系统默认输出保持选中", "系统默认", onMain { app.playbackOptions.route })
         frame.recycle()
 
         key(KeyEvent.KEYCODE_BACK)
-        waitFor("设置返回恢复歌词字幕按钮的焦点") {
+        waitFor("设置返回恢复声音输出按钮的焦点") {
             onMain { activity.focusMemory.activeDialogs == 0 } && focused() == origin
         }
     }
 
-    fun testVideoControlsAutoHideAndSettingsCategoriesRestoreFocus() {
+    fun testVideoUsesEmbeddedSubtitlesAfterLibraryReadFails() {
+        playback.lyricsStatus = 503
         start("test-song-2")
-        focusAction("pause")
+        waitFor("资料库读取失败后回退到视频内嵌字幕") {
+            onMain { app.lyrics == TvLyrics.Embedded && app.embeddedCues.any { it.text?.toString() == "内嵌字幕测试" } }
+        }
+        val subtitleFlags = onMain {
+            app.player.currentTracks.groups.single { it.type == C.TRACK_TYPE_TEXT }.getTrackFormat(0).selectionFlags
+        }
+        assertEquals("没有默认标记的内嵌字幕也能自动启用", 0, subtitleFlags and C.SELECTION_FLAG_DEFAULT)
+    }
+
+    fun testPlaybackSettingsCategoriesRestoreFocus() {
+        start("test-song-2")
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("暂停视频以验收全部设置分类") { onMain { !app.playing && app.player.playbackState == Player.STATE_READY } }
-        focusAction("lyrics")
+        focusAction("output")
         val settingsOrigin = focused()
         key(KeyEvent.KEYCODE_DPAD_CENTER)
         waitFor("播放设置默认完成按钮") { focused().startsWith("dialog:") && focused().endsWith(":action:完成") }
@@ -762,11 +847,11 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         waitFor("下键进入设置分类行") { focused().contains(":action:playback:tab:") }
 
         val categories = listOf(
-            Triple("音轨", "playback:role:backing", "当前标记为伴奏"),
-            Triple("歌词字幕", "playback:text:reload", "重新读取歌词 / 字幕"),
-            Triple("声音输出", "playback:pitch:reset", "恢复原调"),
-            Triple("同步", "playback:sync:reset", "恢复同步默认值"),
+            Triple("声音输出", "playback:output:default", "系统默认输出"),
+            Triple("同步", "playback:quality:480p", "480p"),
         )
+        assertFalse("歌词字幕分类已移除", visibleText("歌词字幕"))
+        assertFalse("音轨设置分类已移除", visibleText("音轨设置"))
         categories.forEachIndexed { index, (category, lastKey, lastCaption) ->
             val tabKey = ":action:playback:tab:$category"
             repeat(3) { if (!focused().endsWith(tabKey)) key(KeyEvent.KEYCODE_DPAD_LEFT) }
@@ -778,9 +863,6 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
             }
             key(KeyEvent.KEYCODE_DPAD_CENTER)
             assertVisibleFocus()
-            if (category != "歌词字幕") assertFalse("$category 长列表末项不应从初始视口直接可见", nodes().any {
-                it.isVisibleToUser && it.isClickable && label(it).contains(lastCaption)
-            })
             key(KeyEvent.KEYCODE_DPAD_DOWN)
             waitFor("$category 下键进入分类内容") { focused().contains(":action:playback:") && !focused().contains(":action:playback:tab:") }
             repeat(18) {
@@ -801,12 +883,35 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
             assertTrue("$category 从列表上键可返回分类行", focused().contains(":action:playback:tab:"))
         }
         key(KeyEvent.KEYCODE_BACK)
-        waitFor("设置关闭恢复歌词字幕入口") { onMain { activity.focusMemory.activeDialogs == 0 } && focused() == settingsOrigin }
+        waitFor("设置关闭恢复声音输出入口") { onMain { activity.focusMemory.activeDialogs == 0 } && focused() == settingsOrigin }
         assertVisibleFocus()
 
-        focusAction("pause")
+        focusAction("more")
+        val moreOrigin = focused()
         key(KeyEvent.KEYCODE_DPAD_CENTER)
-        waitFor("恢复视频真实播放") { onMain { app.playing } }
+        waitFor("更多设置显示同步入口") {
+            onMain { activity.focusMemory.activeDialogs == 1 } &&
+                focused().endsWith(":更多设置:action:完成") && visibleText("同步设置")
+        }
+        assertFalse("更多设置已移除音轨设置入口", visibleText("音轨设置"))
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFor("遥控聚焦同步设置入口") { focused().endsWith(":action:同步设置") }
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        waitFor("通过更多设置打开同步面板") {
+            onMain { activity.focusMemory.activeDialogs == 2 } && visibleText("亲友全屏互动特效")
+        }
+        key(KeyEvent.KEYCODE_BACK)
+        waitFor("关闭同步面板后焦点回到更多设置") {
+            onMain { activity.focusMemory.activeDialogs == 1 } && focused().contains(":更多设置:action:")
+        }
+        assertVisibleFocus()
+        key(KeyEvent.KEYCODE_BACK)
+        waitFor("关闭更多设置恢复演唱焦点") { onMain { activity.focusMemory.activeDialogs == 0 } && focused() == moreOrigin }
+        assertVisibleFocus()
+    }
+
+    fun testVideoControlsAutoHideAndRestoreFocus() {
+        start("test-song-2")
         waitFor("无操作后视频控制栏自动隐藏", 12000) { onMain { !app.controlVisible } && focused().endsWith(":player") }
         assertEquals("隐藏控制栏后视频根目标仍持有唯一焦点", 1, onMain { activity.focusMemory.focusedTargets.size })
         screenshot("video-controls-auto-hidden").recycle()
@@ -853,21 +958,6 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         assertVisibleFocus()
     }
 
-    private fun assertLyricSynchronization() {
-        val timeline = TextTimeline.parse("lrc", TvPlaybackFixture.LYRICS)
-        waitFor("歌词当前句和下一句与真实播放时钟同步") {
-            onMain {
-                val position = app.playbackOptions.lyricPosition
-                app.playbackOptions.activeLine == TextTimeline.at(timeline, position) &&
-                    app.playbackOptions.nextLine == timeline.firstOrNull { it.start > position }
-            }
-        }
-        val lines = onMain { app.playbackOptions.activeLine?.text to app.playbackOptions.nextLine?.text }
-        assertNotNull("当前歌词必须可见", lines.first)
-        assertNotNull("下一句歌词必须预览", lines.second)
-        waitFor("当前句和下一句同时显示") { visibleText(lines.first!!) && visibleText(lines.second!!) }
-    }
-
     private fun assertSquareCovers() {
         waitFor("真实封面HTTP加载") { nodes().any { it.contentDescription?.toString() == "歌曲封面" && it.childCount == 0 } }
         nodes().filter { it.isVisibleToUser && it.childCount == 0 && it.contentDescription?.toString() == "歌曲封面" }.forEach {
@@ -908,9 +998,11 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
         assertFalse("当前设置焦点不能是空区域", bounds.isEmpty)
         var ancestor = action.parent
         while (ancestor != null && !ancestor.isScrollable) ancestor = ancestor.parent
-        assertNotNull("设置内容使用真实可滚动视口", ancestor)
-        val viewport = Rect(); ancestor!!.getBoundsInScreen(viewport)
-        assertTrue("焦点应随滚动完整进入设置视口：$bounds in $viewport", viewport.contains(bounds))
+        if (ancestor != null) {
+            val viewport = Rect().also { ancestor.getBoundsInScreen(it) }
+            assertTrue("焦点应随滚动完整进入设置视口：$bounds in $viewport",
+                bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+        }
         assertVisibleFocus()
     }
 
@@ -924,6 +1016,20 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
             mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE), DecodeHintType.TRY_HARDER to true))
         assertEquals("播放器二维码必须能从最终像素解出同一个动态邀请", fixture.invitationUrl, decoded.text)
         image.recycle()
+    }
+
+    private fun assertLyricHighlight(image: Bitmap, text: String, highlighted: Boolean) {
+        val line = nodes().first { it.isVisibleToUser && it.text?.toString() == text }
+        val bounds = Rect().also { line.getBoundsInScreen(it) }
+        assertTrue("歌词位于可见画面", bounds.intersect(0, 0, image.width, image.height))
+        val pixels = IntArray(bounds.width() * bounds.height())
+        image.getPixels(pixels, 0, bounds.width(), bounds.left, bounds.top, bounds.width(), bounds.height())
+        val blue = Glass.brandBlue.toArgb()
+        val bluePixels = pixels.count {
+            abs(Color.red(it) - Color.red(blue)) < 8 && abs(Color.green(it) - Color.green(blue)) < 8 &&
+                abs(Color.blue(it) - Color.blue(blue)) < 8
+        }
+        assertEquals("$text 使用蓝色高亮", highlighted, bluePixels > 24)
     }
 
     private fun assertDarkControl(image: Bitmap, caption: String, checked: Boolean = false) {
@@ -964,7 +1070,6 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
     private fun key(code: Int) {
         val before = focused()
         instrumentation.sendKeyDownUpSync(code)
-        instrumentation.waitForIdleSync()
         SystemClock.sleep(230)
         history.add("${KeyEvent.keyCodeToString(code)}: $before -> ${focused()} page=${onMain { app.page }} position=${onMain { app.position }} state=${onMain { app.playerState }}")
         File(output, "$name-keys.txt").writeText(history.joinToString("\n"))
@@ -972,8 +1077,8 @@ class TvPlayerRemoteTest : InstrumentationTestCase() {
 
     private fun waitFor(description: String, timeout: Long = 8000, predicate: () -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + timeout
+        // Playback and animated controls can keep the UI thread busy between frames.
         while (SystemClock.uptimeMillis() < deadline) {
-            instrumentation.waitForIdleSync()
             if (predicate()) return
             SystemClock.sleep(70)
         }

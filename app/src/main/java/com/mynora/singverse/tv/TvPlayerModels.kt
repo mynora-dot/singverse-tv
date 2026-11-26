@@ -105,11 +105,3 @@ internal fun <T> tvNextQueuedItem(
     return queue.firstOrNull { eligible(it) && status(it) == "HANDOFF" }
         ?: queue.firstOrNull { eligible(it) && status(it) == "WAITING" }
 }
-
-internal data class TvLyricPreview(val current: TextLine?, val next: TextLine?)
-
-/** Input is the existing parsed timeline, and position includes the existing lyric offset. */
-internal fun tvLyricPreview(lines: List<TextLine>, position: Long): TvLyricPreview = TvLyricPreview(
-    current = TextTimeline.at(lines, position),
-    next = lines.firstOrNull { it.start > position },
-)

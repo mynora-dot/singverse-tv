@@ -18,6 +18,7 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
     @Volatile var generatedBacking = false
     @Volatile var serverAutoAdvance = false
     @Volatile var fairAcknowledgements = false
+    @Volatile var alternateAudioHls = emptyMap<String, ByteArray>()
     val unavailableResourceSongs = ConcurrentHashMap.newKeySet<String>()
     @Volatile var holdNextResponse = false
     @Volatile var heldNextResponse: String? = null
@@ -32,6 +33,9 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
     @Volatile var heldResourceResponse: String? = null
         private set
     private val resourceResponseGate = CountDownLatch(1)
+    @Volatile var holdLyricsResponse = false
+    @Volatile var lyricsStatus = 200
+    private val lyricsResponseGate = CountDownLatch(1)
     val resourceRequests = CopyOnWriteArrayList<JSONObject>()
     val unconfirmedResourceRequests = CopyOnWriteArrayList<JSONObject>()
     val playbackEvents = CopyOnWriteArrayList<JSONObject>()
@@ -50,8 +54,12 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
     private var lastEvent = -1L
     private var preparingResource: JSONObject? = null
 
-    fun media(path: String): Pair<ByteArray, String>? = mediaBytes[path]
-        ?: if (path == GENERATED_BACKING_URL) mediaBytes[AUDIO_URL] else null
+    fun media(path: String): Pair<ByteArray, String>? {
+        if (path == GENERATED_BACKING_URL) return mediaBytes[AUDIO_URL]
+        if (!path.startsWith(HLS_MEDIA_ROOT)) return mediaBytes[path]
+        val bytes = alternateAudioHls[path.removePrefix(HLS_MEDIA_ROOT)] ?: return null
+        return bytes to if (path.endsWith(".m3u8")) "application/vnd.apple.mpegurl" else "video/mp4"
+    }
 
     /** Pause only the HTTP response, not server state or concurrent snapshot/media requests. */
     fun beforeSend(path: String, body: JSONObject, response: String) {
@@ -67,16 +75,25 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
             heldResourceResponse = response
             check(resourceResponseGate.await(30, TimeUnit.SECONDS)) { "测试资源响应未释放" }
         }
+        if (holdLyricsResponse && path.endsWith("/text-tracks")) {
+            check(lyricsResponseGate.await(30, TimeUnit.SECONDS)) { "测试歌词响应未释放" }
+        }
     }
 
     fun releaseNextResponse() { nextResponseGate.countDown() }
     fun releaseEndedResponse() { endedResponseGate.countDown() }
     fun releaseResourceResponse() { resourceResponseGate.countDown() }
+    fun releaseLyricsResponse() { lyricsResponseGate.countDown() }
 
     /** Simulates another authorized controller; the app learns this state through real HTTP refresh. */
     @Synchronized fun remoteNext() { next(); revision++ }
     @Synchronized fun remoteNextIfCurrent(attempt: String) { if (current?.optString("attemptId") == attempt) { next(); revision++ } }
     @Synchronized fun remotePause() { enqueue("PAUSE"); revision++ }
+    @Synchronized fun remoteAudioRole(role: String): String {
+        enqueue("AUDIO_ROLE")
+        revision++
+        return commands.last().put("role", role).getString("id")
+    }
 
     @Synchronized fun snapshot(): JSONObject = TvUiFixture.snapshot()
         .put("queuePolicy", if (fairAcknowledgements) "FAIR" else "LEGACY")
@@ -105,7 +122,7 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
         path == "/api/v1/tv/playback-resources" -> {
             resourceRequests.add(JSONObject(body.toString()))
             if (current?.optBoolean("confirmed") != true) unconfirmedResourceRequests.add(JSONObject(body.toString()))
-            val ready = resource(body.getString("songId"), body.optString("audioRole"))
+            val ready = resource(body.getString("songId"), body.optString("audioRole"), body.optBoolean("switchableAudio"))
             if (holdResourceReadiness) {
                 preparingResource = ready
                 JSONObject(ready.toString()).put("id", "fixture-preparing")
@@ -176,9 +193,11 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
             .put("server", JSONObject().put("name", "播放器验收测试服务"))
             .put("featuredPlaylists", JSONArray()).toString()
         path.endsWith("/text-tracks") -> {
-            val empty = path.substringBeforeLast('/').endsWith("test-song-3")
-            JSONObject().put("items", if (empty) JSONArray() else JSONArray().put(JSONObject()
-                .put("id", if (path.contains("test-song-1/")) "metadata-lyrics" else "lrc")
+            if (lyricsStatus != 200) throw TvFixtureHttpException(lyricsStatus, "测试：资料库歌词无法读取")
+            val songId = path.substringBeforeLast('/').substringAfterLast('/')
+            val empty = songId == "test-song-3"
+            JSONObject().put("songId", songId).put("items", if (empty) JSONArray() else JSONArray().put(JSONObject()
+                .put("id", if (songId == "test-song-1") "metadata-lyrics" else "lrc")
                 .put("format", "lrc").put("text", LYRICS)))
                 .put("warnings", JSONArray()).toString()
         }
@@ -211,6 +230,9 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
             JSONObject().put("itemId", it.getString("id")).put("songId", it.getString("songId"))
                 .put("attemptId", UUID.randomUUID().toString()).put("state", "PREPARING")
                 .put("confirmed", confirmed).put("eventSeq", -1).put("positionMs", 0)
+                .also { playback ->
+                    if (alternateAudioHls.isNotEmpty() && it.getString("songId") == "test-song-2") playback.put("audioRole", "backing")
+                }
         }
     }
 
@@ -219,18 +241,30 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
             .also { command -> current?.let { command.put("playback", JSONObject(it.toString())) } })
     }
 
-    private fun resource(song: String, audioRole: String): JSONObject {
+    private fun resource(song: String, audioRole: String, switchableAudio: Boolean): JSONObject {
         if (song in unavailableResourceSongs) return JSONObject().put("status", "FAILED").put("state", "FAILED")
             .put("revision", "player-test-v1").put("error", "测试资源暂不可用")
         val video = song == "test-song-2"
+        val hls = video && alternateAudioHls.isNotEmpty() && switchableAudio
         val streams = streams(song)
-        return JSONObject().put("status", "READY").put("mode", "DIRECT").put("revision", "player-test-v1")
-            .put("url", if (video) VIDEO_URL else AUDIO_URL).put("offset", 0)
-            .put("execution", JSONObject().put("media", JSONObject().put("duration", DURATION_MS / 1000.0)
-                .put("bitrate", if (video) 174191 else 768000)
-                .put("container", if (video) "mp4" else "wav").put("streams", streams)))
+        val execution = JSONObject().put("media", JSONObject().put("duration", DURATION_MS / 1000.0)
+            .put("bitrate", if (video) 174191 else 768000).put("container", if (video) "mp4" else "wav").put("streams", streams))
+        if (hls) execution.put("trackMapping", JSONArray(streams.objects().mapIndexed { index, track ->
+            JSONObject().put("kind", track.getString("kind")).put("sourceId", track.getString("id"))
+                .put("outputIndex", index).put("title", track.optString("title"))
+        }))
+        val url = when {
+            hls -> HLS_MEDIA_ROOT + "master.m3u8"
+            video -> VIDEO_URL
+            else -> AUDIO_URL
+        }
+        return JSONObject().put("status", "READY").put("mode", if (hls) "HLS" else "DIRECT").put("revision", "player-test-v1")
+            .put("url", url).put("offset", 0).put("execution", execution)
             .put("audioRoles", roles(song))
-            .also { if (generatedBacking && song == "test-song-1" && audioRole == "backing") it.put("backingUrl", GENERATED_BACKING_URL) }
+            .also {
+                if (hls) it.put("id", "fixture-alternate-audio")
+                if (generatedBacking && song == "test-song-1" && audioRole == "backing") it.put("backingUrl", GENERATED_BACKING_URL)
+            }
     }
 
     private fun streams(song: String): JSONArray = JSONArray().apply {
@@ -259,6 +293,7 @@ internal class TvPlaybackFixture(videoBytes: ByteArray) {
         const val GENERATED_BACKING_URL = "/api/v1/tv/test-media/synthetic-generated-backing.wav"
         const val VIDEO_URL = "/api/v1/tv/test-media/synthetic-dual-audio.mp4"
         const val VIDEO_ASSET = "player-fixtures/synthetic-dual-audio.mp4"
+        const val HLS_MEDIA_ROOT = "/api/v1/tv/test-media/hls/"
         const val LYRICS = "[00:02.00]测试歌词第一句\n[00:04.00]测试歌词第二句\n[00:08.00]测试歌词第三句\n[00:12.00]测试歌词第四句\n[00:16.00]测试歌词第五句\n[00:20.00]测试歌词第六句\n[00:24.00]测试歌词第七句\n[00:28.00]测试歌词第八句\n[00:32.00]测试歌词第九句\n[00:36.00]测试歌词结束句"
 
         fun songs(): List<JSONObject> = TvUiFixture.songs().take(3).mapIndexed { index, source ->

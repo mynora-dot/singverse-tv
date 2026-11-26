@@ -3,6 +3,7 @@
 package com.mynora.singverse.tv
 
 import android.os.SystemClock
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -49,9 +50,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,8 +94,26 @@ import java.util.Locale
         withFrameNanos { }; withFrameNanos { }
         if (memory.activeDialogs == 0) {
             if (controlsVisible) {
-                if (!memory.restore(page) || memory.last[page] == "player") primary.requestFocus()
+                if (memory.last[page] == "player" || !memory.restore(page)) {
+                    if (!runCatching { primary.requestFocus() }.getOrDefault(false)) {
+                        listOf("restart", "queue", "favorite", "output", "more").firstOrNull { key ->
+                            memory.targets["$page:action:player:$key"]?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true
+                        }
+                    }
+                }
             } else surfaceFocus.requestFocus()
+        }
+    }
+    LaunchedEffect(controlsVisible, app.playerState) {
+        if (controlsVisible && memory.activeDialogs == 0 && app.playerState in listOf("IDLE", "ENDED")) {
+            withFrameNanos { }; withFrameNanos { }
+            if (memory.activeDialogs == 0 && memory.focusedTargets.none { it.startsWith("$page:") }) {
+                if (!runCatching { primary.requestFocus() }.getOrDefault(false)) {
+                    listOf("restart", "queue", "favorite", "output", "more").firstOrNull { key ->
+                        memory.targets["$page:action:player:$key"]?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true
+                    }
+                }
+            }
         }
     }
     LaunchedEffect(controlsVisible, audioOnly, app.playing, app.foreground, lastInteraction, memory.activeDialogs) {
@@ -127,11 +143,11 @@ import java.util.Locale
         PlayerHeader(app, audioOnly, Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(horizontal = 32.dp, vertical = 16.dp))
         AnimatedVisibility(
             visible = audioOnly || !cleanVideo,
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 32.dp).width(172.dp),
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 56.dp, end = 32.dp),
             enter = fadeIn(tween(260)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { it / 3 },
             exit = fadeOut(tween(200)) + slideOutHorizontally(tween(220)) { it / 3 },
         ) {
-            PlayerSideRail(app, audioOnly, Modifier.fillMaxWidth())
+            PlayerSideRail(app, audioOnly)
         }
         AnimatedVisibility(
             visible = audioOnly && !controlsVisible,
@@ -140,14 +156,6 @@ import java.util.Locale
             exit = fadeOut(tween(160)),
         ) {
             AudioMinimalProgress(app)
-        }
-        AnimatedVisibility(
-            visible = !audioOnly && !controlsVisible && app.playerState != "IDLE",
-            modifier = Modifier.align(Alignment.BottomCenter),
-            enter = fadeIn(tween(280)) + slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 3 },
-            exit = fadeOut(tween(180)) + slideOutVertically(tween(200)) { it / 3 },
-        ) {
-            VideoExternalLyrics(app)
         }
         AnimatedVisibility(
             visible = controlsVisible,
@@ -159,17 +167,17 @@ import java.util.Locale
                 Modifier
                     .fillMaxWidth()
                     .background(
-                        if (audioOnly) Brush.verticalGradient(listOf(Color.Transparent, Color(0xC00A0C10)))
-                        else Brush.verticalGradient(listOf(Color.Transparent, Color(0xE0080A0E)))
+                        if (audioOnly) Brush.verticalGradient(listOf(Color.Transparent, Color(0xBD080A0E)))
+                        else Brush.verticalGradient(listOf(Color.Transparent, Color(0xD806080C)))
                     )
-                    .padding(horizontal = 32.dp, vertical = 16.dp),
+                    .padding(horizontal = 32.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (!audioOnly) CurrentVideoSong(app, song)
                 PlayerControls(
-                    app, audioOnly,
+                    app = app,
+                    audioOnly = audioOnly,
+                    song = song,
                     onQueue = { queueOpen = true },
-                    onLyrics = { settings = "歌词字幕" },
                     onOutput = { settings = "声音输出" },
                     onMore = { moreOpen = true },
                     primaryFocus = primary,
@@ -185,7 +193,6 @@ import java.util.Locale
     if (moreOpen) Modal("更多设置", "播放辅助与本机操作。", { moreOpen = false }) {
         Action("完成") { moreOpen = false }
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 278.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(6.dp)) {
-            item { Action("音轨设置", Modifier.fillMaxWidth()) { settings = "音轨" } }
             item { Action("同步设置", Modifier.fillMaxWidth()) { settings = "同步" } }
             item { Action("音质详情", Modifier.fillMaxWidth()) { qualityOpen = true } }
             item { Action("NAS 收藏 · ${app.favoriteSongs().size}", Modifier.fillMaxWidth()) { favoritesOpen = true; app.refreshFavorites() } }
@@ -218,52 +225,35 @@ import java.util.Locale
 }
 
 @Composable private fun VideoPlayerSurface(app: TvApp) {
-    AndroidView(
-        factory = { context -> PlayerView(context).apply { player = app.player; useController = false; isFocusable = false } },
-        modifier = Modifier.fillMaxSize(),
-        onRelease = { it.player = null },
-    )
-}
-
-@Composable private fun VideoExternalLyrics(app: TvApp) {
-    val line = app.playbackOptions.activeLine ?: return
-    val next = app.playbackOptions.nextLine
-    Box(Modifier.fillMaxWidth().padding(bottom = 34.dp, start = 48.dp, end = 48.dp), contentAlignment = Alignment.BottomCenter) {
-        val text = buildAnnotatedString {
-            if (!line.hasCompleteWords) append(line.text)
-            else line.words.forEach { word ->
-                withStyle(SpanStyle(color = if (word.at <= app.playbackOptions.lyricPosition) Color(0xFFFFD8E0) else Color.White.copy(alpha = 0.56f))) {
-                    append(word.text)
-                }
-            }
-        }
-        Column(
-            Modifier
-                .glassSurface(TvShape.card, intensity = 0.85f, base = Glass.mediaScrim, elevation = 12.dp)
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(text, color = Color.White, fontSize = 27.sp, lineHeight = 35.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            next?.let {
-                Text(it.text, color = Color.White.copy(alpha = 0.68f), fontSize = 15.sp, lineHeight = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
+    val showEmbedded = app.hasConfirmedPlayback && app.lyrics == TvLyrics.Embedded
+    val subtitleBottomPadding = if (app.controlVisible) 134.dp else 8.dp
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { context -> PlayerView(context).apply { player = app.player; useController = false; isFocusable = false } },
+            modifier = Modifier.fillMaxSize(),
+            update = { it.subtitleView?.visibility = if (showEmbedded) View.VISIBLE else View.INVISIBLE },
+            onRelease = { it.player = null },
+        )
+        VideoPlayerLyrics(app, Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, bottom = subtitleBottomPadding))
     }
 }
 
 @Composable private fun AudioPlayerScene(app: TvApp, song: JSONObject?, controlsVisible: Boolean) {
     val songId = song?.optString("id").orEmpty()
     val coverPath = song?.optString("coverPath").orEmpty()
-    val revision = song?.optString("revision").orEmpty()
-    var ambientPair by remember(songId) { mutableStateOf(fallbackAmbientColors(songId)) }
-    var stageBackdrop by remember(app.client.base, coverPath, revision) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(app.client.base, songId, coverPath, revision) {
-        ambientPair = fallbackAmbientColors(songId)
+    val revision = song.artworkVersion()
+    val scope = app.client.artworkScope
+    var ambientPair by remember(scope, songId, coverPath, revision) { mutableStateOf(fallbackAmbientColors(songId)) }
+    var stageBackdrop by remember(scope, coverPath, revision) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(scope, songId, coverPath, revision) {
         if (coverPath.isNotBlank()) {
-            val bmp = runCatching { app.client.image(coverPath, revision) }.getOrNull()
+            val bmp = try {
+                app.client.image(coverPath, revision)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) { null }
             if (bmp != null) {
-                val extracted = withContext(Dispatchers.Default) { cachedAmbientColors("$songId:$revision", bmp) }
+                val extracted = withContext(Dispatchers.Default) { cachedAmbientColors("$scope:$songId:$revision", bmp) }
                 if (extracted != null) ambientPair = extracted
                 stageBackdrop = if (GlassTier.current.supportsBackdropBlur) bmp
                 else withContext(Dispatchers.Default) { softenedArtistBackground(bmp) }
@@ -351,7 +341,6 @@ import java.util.Locale
                 }
             }
 
-            // Center-Right Column: Giant Apple Music Sing Multi-Line Synchronized Lyrics Stage
             Box(
                 Modifier.weight(1f).fillMaxHeight(),
                 contentAlignment = Alignment.CenterStart,
@@ -360,7 +349,7 @@ import java.util.Locale
                     AudioPlayerLyrics(app, Modifier.fillMaxWidth())
                 } else {
                     Text(
-                        if (app.playerState == "ERROR") "播放失败，可在下方重试或切歌" else "确认开唱后显示实时歌词",
+                        if (app.playerState == "ERROR") "播放失败，可在下方重试或切歌" else "确认开唱后显示歌词",
                         color = if (app.playerState == "ERROR") Danger else Color.White.copy(alpha = 0.56f),
                         fontSize = 22.sp,
                         lineHeight = 30.sp,
@@ -647,42 +636,34 @@ import java.util.Locale
     }
 }
 
-@Composable private fun CurrentVideoSong(app: TvApp, song: JSONObject?) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .glassSurface(GlassShape.pill, intensity = 0.86f, base = Glass.mediaSafe, elevation = 10.dp)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
-    ) {
-        SongArtwork(app, song, Modifier.size(40.dp), shape = RoundedCornerShape(10.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(song?.optString("title").orEmpty().ifBlank { "等待演唱" }, color = Paper, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            song?.let { Text(it.artists(), color = Muted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        }
-        StatusPill(stateLabel(app.playerState), if (app.playerState == "ERROR") Danger else Brand, pulse = app.playing)
-    }
-}
-
 @Composable private fun PlayerHeader(app: TvApp, audioOnly: Boolean, modifier: Modifier) {
     var clock by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { while (true) { clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()); delay(30000) } }
     val waiting = app.snapshot.optJSONObject("playback")?.optBoolean("confirmed") != true &&
         app.snapshot.optJSONArray("queue")?.objects()?.any { it.optString("status") == "HANDOFF" } == true
     val status = if (waiting) "等待确认开唱" else "${stateLabel(app.playerState)}${if (audioOnly) " · 音频" else ""}"
-    val pillBase = if (audioOnly) Glass.surfaceFloat else Glass.mediaSafe
+    val pillBase = if (audioOnly) Glass.surfaceFloat else Color(0xD80B0E14)
+    val netTone = if (app.online) Success else Danger
+    val dotAlpha = if (app.online) {
+        val transition = rememberInfiniteTransition(label = "headerNetPulse")
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.45f,
+            animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "headerDotAlpha",
+        ).value
+    } else 1f
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
-            if (audioOnly) Modifier else Modifier.glassSurface(GlassShape.pill, base = Glass.mediaSafe, elevation = 6.dp).padding(horizontal = 12.dp, vertical = 5.dp),
+            if (audioOnly) Modifier else Modifier.glassSurface(GlassShape.pill, base = pillBase, elevation = 6.dp).padding(horizontal = 12.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            HomeGlyph("brand", Modifier.size(24.dp), Paper)
-            Text("SingVerse", color = Paper, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            HomeGlyph("brand", Modifier.size(22.dp), Paper)
+            Text("SingVerse", color = Paper, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         }
         Row(
-            Modifier.glassSurface(GlassShape.pill, base = pillBase, elevation = 6.dp).padding(horizontal = 11.dp, vertical = 5.dp),
+            Modifier.glassSurface(GlassShape.pill, base = pillBase, elevation = 6.dp, backdropBlur = audioOnly).padding(horizontal = 11.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
@@ -691,73 +672,189 @@ import java.util.Locale
         }
         Spacer(Modifier.weight(1f))
         Row(
-            if (audioOnly) Modifier else Modifier.glassSurface(GlassShape.pill, base = Glass.mediaSafe, elevation = 6.dp).padding(horizontal = 10.dp, vertical = 4.dp),
+            Modifier.glassSurface(GlassShape.pill, base = pillBase, elevation = 6.dp, backdropBlur = audioOnly).padding(horizontal = 12.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(clock, color = Paper, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            StatusPill(if (app.online) "NAS 已连接" else "网络异常", if (app.online) Success else Danger, pulse = app.online)
+            if (clock.isNotEmpty()) {
+                Text(clock, color = Paper, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
+                Box(Modifier.width(1.dp).height(11.dp).background(Color(0x22FFFFFF)))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(Modifier.size(6.dp).background(netTone.copy(alpha = dotAlpha), CircleShape))
+                Text(
+                    if (app.online) "NAS 已连接" else "网络异常",
+                    color = netTone,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
 
-@Composable private fun PlayerSideRail(app: TvApp, audioOnly: Boolean, modifier: Modifier) {
+@Composable private fun PlayerSideRail(app: TvApp, audioOnly: Boolean, modifier: Modifier = Modifier) {
     val queue = app.snapshot.optJSONArray("queue")?.objects().orEmpty()
     val playback = app.snapshot.optJSONObject("playback")
     val current = if (playback?.optBoolean("confirmed") == true) playback.optString("itemId")
     else queue.firstOrNull { it.optString("status") == "PLAYING" }?.optString("id").orEmpty()
     val next = tvNextQueuedItem(queue, { it.optString("status") }, { it.optString("id") }, current)
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.End) {
-        if (next != null) NextSongCard(app, next, audioOnly, Modifier.fillMaxWidth())
-        PlayerPhoneCard(app, audioOnly, Modifier.fillMaxWidth())
+    val waitingCount = queue.count { it.optString("status") == "WAITING" && it.optString("id") != current }
+    Column(
+        modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.End,
+    ) {
+        if (next != null) NextSongCard(app, next, waitingCount, audioOnly, Modifier.width(182.dp))
+        PlayerPhoneCard(app, audioOnly)
     }
 }
 
-@Composable private fun NextSongCard(app: TvApp, item: JSONObject, audioOnly: Boolean, modifier: Modifier = Modifier) {
+@Composable private fun NextSongCard(
+    app: TvApp,
+    item: JSONObject,
+    waitingCount: Int,
+    audioOnly: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val song = item.optJSONObject("song")
     val ending = app.duration > 0 && app.duration - app.position in 0..30000
+    val cardShape = RoundedCornerShape(15.dp)
+    val coverShape = RoundedCornerShape(8.dp)
+    val dotAlpha = if (ending) {
+        val transition = rememberInfiniteTransition(label = "nextSongPulse")
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.38f,
+            animationSpec = infiniteRepeatable(tween(760, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "nextDotAlpha",
+        ).value
+    } else 1f
     Row(
         modifier
             .glassSurface(
-                TvShape.card,
+                cardShape,
                 highlighted = ending,
-                base = if (audioOnly) Glass.surfaceCard else Glass.mediaSafe,
+                base = if (audioOnly) Glass.surfaceCard else Color(0xD80B0E14),
                 tintAccent = if (ending) Brand.copy(alpha = 0.14f) else null,
-                elevation = 6.dp,
+                elevation = 8.dp,
                 backdropBlur = audioOnly,
             )
-            .padding(10.dp),
+            .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        SongArtwork(app, song, Modifier.size(42.dp), shape = RoundedCornerShape(9.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("即将播放", color = Paper.copy(alpha = 0.56f), fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text(song?.optString("title").orEmpty(), color = Paper, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(song?.artists().orEmpty(), color = Muted, fontSize = 10.5.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(coverShape)
+                .border(0.75.dp, Color(0x22FFFFFF), coverShape),
+        ) {
+            SongArtwork(app, song, Modifier.fillMaxSize(), shape = coverShape)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(4.5.dp)
+                        .background(
+                            (if (ending) Glass.brandCoral else Accent).copy(alpha = dotAlpha),
+                            CircleShape,
+                        ),
+                )
+                Text(
+                    "即将播放",
+                    color = if (ending) Glass.brandCoral else Paper.copy(alpha = 0.62f),
+                    fontSize = 9.5.sp,
+                    lineHeight = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                if (waitingCount > 1) {
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "共${waitingCount}首",
+                        color = Muted.copy(alpha = 0.72f),
+                        fontSize = 9.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Text(
+                song?.optString("title").orEmpty(),
+                color = Paper,
+                fontSize = 12.5.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val artist = song?.artists().orEmpty()
+            if (artist.isNotBlank()) {
+                Text(
+                    artist,
+                    color = Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 @Composable private fun PlayerPhoneCard(app: TvApp, audioOnly: Boolean, modifier: Modifier = Modifier) {
-    Column(
+    val outerShape = RoundedCornerShape(16.dp)
+    val innerShape = RoundedCornerShape(10.dp)
+    val ready = app.invitation.isNotBlank() && app.online
+    Box(
         modifier
-            .glassSurface(TvShape.card, base = if (audioOnly) Glass.surfaceCard else Glass.mediaSafe, elevation = 6.dp, backdropBlur = audioOnly)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("手机点歌", color = Paper.copy(alpha = 0.90f), fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
-        Box(
-            Modifier.size(124.dp).clip(RoundedCornerShape(12.dp)).background(Color.White).padding(6.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (app.invitation.isNotBlank() && app.online) Qr(app.invitation, Modifier.fillMaxSize())
-            else Text(
-                if (app.snapshot.optString("status") == "ENDED") "本场已结束" else if (app.invitationLoading) "生成中…" else "暂不可用",
-                color = Ink,
-                fontSize = 10.sp,
+            .size(116.dp)
+            .glassSurface(
+                outerShape,
+                base = if (audioOnly) Glass.surfaceCard else Color(0xD80B0E14),
+                elevation = 8.dp,
+                backdropBlur = audioOnly,
             )
+            .padding(6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (ready) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(innerShape)
+                    .background(Color.White)
+                    .padding(4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Qr(app.invitation, Modifier.fillMaxSize())
+            }
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(innerShape)
+                    .background(Color(0x12FFFFFF)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (app.snapshot.optString("status") == "ENDED") "本场已结束" else if (app.invitationLoading) "生成中…" else "暂不可用",
+                    color = Muted,
+                    fontSize = 10.5.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
         }
     }
 }

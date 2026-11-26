@@ -9,6 +9,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.test.InstrumentationTestCase
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
@@ -236,6 +237,67 @@ class TvLoginRemoteTest : InstrumentationTestCase() {
             assertEquals("", onMain { app.login.qrUrl })
             capture("login-v2-expired-login")
         }
+    }
+
+    fun testColdRestoreEntersHomeWhileCatalogLoadsWithoutCreatingPlayer() {
+        TvUiFixture().use { nas ->
+            val recovery = CountDownLatch(1)
+            val home = CountDownLatch(1)
+            nas.sessionRecoveryGate = recovery
+            nas.homeResponseGate = home
+            try {
+                launchWithSavedLogin(nas)
+                waitFor { onMain { app.restoringConnection } && hasText("正在连接上次的 NAS") }
+                assertFalse(hasText("账号登录"))
+                recovery.countDown()
+
+                waitFor { onMain { app.connected && !app.restoringConnection } && hasText("首页") }
+                waitFor { "begin GET /api/v1/tv/home" in nas.httpEvents }
+                assertFalse(nas.httpEvents.any { it.startsWith("end GET /api/v1/tv/home ") })
+                onMain {
+                    app.background()
+                    app.foreground()
+                    assertNull(app.initializedPlayer)
+                }
+                home.countDown()
+                waitFor { onMain { app.homeTotal == 20L } }
+            } finally {
+                recovery.countDown()
+                home.countDown()
+            }
+        }
+    }
+
+    fun testColdRestoreWithRevokedCredentialShowsLoginChoices() {
+        TvUiFixture().use { nas ->
+            nas.rejectTvLogin = true
+            launchWithSavedLogin(nas)
+            waitFor { !onMain { app.restoringConnection } && hasText("账号登录") }
+            assertTrue(hasText("上次的登录已失效"))
+            onMain {
+                assertFalse(app.connected)
+                assertFalse(app.client.hasSavedCredentials)
+                assertNull(app.initializedPlayer)
+            }
+        }
+    }
+
+    private fun launchWithSavedLogin(nas: TvUiFixture) {
+        onMain { activity.finish() }
+        instrumentation.waitForIdleSync()
+        activity = instrumentation.startActivitySync(Intent(instrumentation.targetContext, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+            putExtra("tv-login-fixture", true)
+            putExtra("tv-login-saved-base", nas.base)
+            putExtra("tv-login-saved-token", nas.token)
+        }) as TvLoginFixtureActivity
+    }
+
+    private fun hasText(text: String): Boolean {
+        fun contains(node: AccessibilityNodeInfo): Boolean =
+            node.text?.contains(text) == true || node.contentDescription?.contains(text) == true ||
+                (0 until node.childCount).any { node.getChild(it)?.let(::contains) == true }
+        return instrumentation.uiAutomation.rootInActiveWindow?.let(::contains) == true
     }
 
     fun testExpiredQrCanBeRefreshedWithRemote() {

@@ -738,18 +738,19 @@ class TvHomeRemoteTest : InstrumentationTestCase() {
         screenshot("queue-added-song")
     }
 
-    fun testSettingsGroupsKeepRemoteFocusAndRealParticipantState() {
+    fun testSettingsGroupsKeepRemoteFocus() {
         repeat(4) { key(KeyEvent.KEYCODE_DPAD_RIGHT) }
         waitFor("进入设置") { onMain { app.page == "设置" } }
         onMain { activity.focusMemory.targets["设置:action:连接"]?.requestFocus() }
         waitFor("聚焦连接分组") { focusedAddress().endsWith(":action:连接") }
-        assertTrue("参与者数据来自隔离快照", onMain { app.participantCount == 1 })
+        assertFalse("设置不显示聚会管理和本场参与者", allNodes().any {
+            val caption = nodeLabel(it)
+            it.isVisibleToUser && (caption.contains("聚会管理") || caption.contains("本场参与者"))
+        })
         screenshot("settings-connection")
 
         listOf(
-            "播放设置" to "可用音轨",
-            "聚会管理" to "亲友点歌",
-            "本场参与者" to "测试亲友",
+            "播放设置" to "系统默认输出",
             "设备信息" to "Android",
             "应用更新" to "检查更新",
         ).forEach { (group, content) ->

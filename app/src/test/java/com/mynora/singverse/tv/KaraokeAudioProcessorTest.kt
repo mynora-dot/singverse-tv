@@ -8,14 +8,28 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 class KaraokeAudioProcessorTest {
     private fun input(vararg values: Short)=ByteBuffer.allocateDirect(values.size*2).order(ByteOrder.nativeOrder()).apply { values.forEach { putShort(it) };flip() }
-    @Test fun channelSelectionMixingAndFlush() {
-        val p=KaraokeAudioProcessor();p.configure(AudioProcessor.AudioFormat(1000,2,C.ENCODING_PCM_16BIT));p.flush()
-        p.queueInput(AudioProcessor.EMPTY_BUFFER);assertFalse(p.output.hasRemaining())
-        p.channelMode="LEFT";p.queueInput(input(100,-200));val out=p.output;assertEquals(100.toShort(),out.short);assertEquals(100.toShort(),out.short)
-        p.channelMode="MONO";p.queueInput(input(100,-200));assertEquals((-50).toShort(),p.output.short)
-        p.delayMs=1;p.flush();p.channelMode="STEREO";p.queueInput(input(30,40,50,60));val delayed=p.output
-        assertEquals(0.toShort(),delayed.short);assertEquals(0.toShort(),delayed.short);assertEquals(30.toShort(),delayed.short);assertEquals(40.toShort(),delayed.short)
-        p.queueEndOfStream();val tail=p.output;assertEquals(50.toShort(),tail.short);assertEquals(60.toShort(),tail.short)
-        p.flush();p.queueInput(input(70,80));assertEquals(0.toShort(),p.output.short)
+    @Test fun channelSelectionEmitsEachFrameImmediately() {
+        val processor = KaraokeAudioProcessor()
+        processor.configure(AudioProcessor.AudioFormat(1000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
+        assertFalse(processor.output.hasRemaining())
+
+        val expectedFrames = mapOf(
+            "STEREO" to (100 to -200),
+            "LEFT" to (100 to 100),
+            "RIGHT" to (-200 to -200),
+            "MONO" to (-50 to -50),
+        )
+        for ((channel, expected) in expectedFrames) {
+            processor.channelMode = channel
+            processor.queueInput(input(100, -200))
+            val frame = processor.output
+            assertEquals(expected.first.toShort(), frame.short)
+            assertEquals(expected.second.toShort(), frame.short)
+            assertFalse(frame.hasRemaining())
+        }
+        processor.queueEndOfStream()
+        assertFalse(processor.output.hasRemaining())
     }
 }

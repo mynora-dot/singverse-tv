@@ -1,31 +1,63 @@
 package com.mynora.singverse.tv
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.LruCache
+import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
 import java.net.URI
 
 class TvHttpException(val status: Int, message: String) : java.io.IOException(message)
 
 class TvClient(context: Context) {
-    private val covers = object : android.util.LruCache<String, android.graphics.Bitmap>(16 * 1024 * 1024) {
-        override fun sizeOf(key: String, value: android.graphics.Bitmap) = value.allocationByteCount
+    private class ArtworkAccess(
+        val namespace: String? = null,
+        val authorizedConnection: Pair<String, String>? = null,
+        val blocked: Boolean = false,
+    )
+
+    private data class ImageConnection(val address: String, val credential: String, val access: ArtworkAccess)
+    private data class MemoryArtwork(val bitmap: Bitmap, val expiresAt: Long?)
+
+    private val artworkAccess = mutableStateOf(ArtworkAccess())
+    internal val artworkScope: Any get() = artworkAccess.value
+    private val artworkDisk = TvArtworkDiskCache(File(context.cacheDir, "artwork-v1"))
+    private val covers = object : LruCache<String, MemoryArtwork>(16 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: MemoryArtwork) = value.bitmap.allocationByteCount
     }
-    private val imageRequests = TvImageRequests(covers::get)
+    private val imageRequests = TvImageRequests { key: String ->
+        covers.get(key)?.takeIf { it.expiresAt == null || artworkIsFresh(it.expiresAt, System.currentTimeMillis()) }?.bitmap
+    }
     private val preferences = context.getSharedPreferences("nas", Context.MODE_PRIVATE)
     private val credentialCipher = TvCredentialCipher(context, preferences)
     @Volatile var base: String = preferences.getString("base", "") ?: ""
     @Volatile var token: String = ""
     @Volatile internal var connectionGeneration = 0L; private set
-    init {
-        token = runCatching {
-            val value = preferences.getString("token", null) ?: return@runCatching ""
-            credentialCipher.decrypt(value)
-        }.getOrDefault("")
+
+    internal val hasSavedCredentials: Boolean get() = base.isNotBlank() && preferences.contains("token")
+
+    internal suspend fun restoreCredentials(): Boolean {
+        val generation = connectionGeneration
+        val restored = withContext(Dispatchers.IO) {
+            val encrypted = preferences.getString("token", null) ?: return@withContext ""
+            runCatching { credentialCipher.decrypt(encrypted) }.getOrDefault("")
+        }
+        if (restored.isBlank()) return false
+        currentCoroutineContext().ensureActive()
+        return synchronized(this) {
+            if (generation != connectionGeneration || token.isNotEmpty()) return@synchronized false
+            token = restored
+            true
+        }
     }
+
     @Synchronized fun credentials(): Pair<String, String> = base to token
     suspend fun save(address: String, credential: String) {
         val uri = URI(address.trim().trimEnd('/'))
@@ -36,38 +68,142 @@ class TvClient(context: Context) {
         currentCoroutineContext().ensureActive()
         synchronized(this) {
             check(generation == connectionGeneration) { "NAS 连接已更换，请重新登录" }
-            imageRequests.clear(); covers.evictAll()
+            resetArtworkAccess()
             connectionGeneration++
             base = uri.toString(); token = credential
             preferences.edit().putString("base", base).putString("token", encrypted).apply()
         }
     }
-    @Synchronized fun clear() { connectionGeneration++; imageRequests.clear(); covers.evictAll(); token = ""; preferences.edit().remove("token").apply() }
-    suspend fun image(path: String, revision: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
-        val limit = when {
-            path.startsWith("/api/v1/tv/library/classification-tags/") ||
-                path.startsWith("/api/v1/tv/library/artists/") -> 1280
-            path.startsWith("/api/v1/tv/library/songs/") -> 512
-            else -> return@withContext null
+    @Synchronized fun clear() {
+        connectionGeneration++
+        resetArtworkAccess()
+        token = ""
+        preferences.edit().remove("token").apply()
+    }
+
+    @Synchronized internal fun authorizeArtworkCache(instanceId: String, expectedGeneration: Long) {
+        if (expectedGeneration != connectionGeneration || token.isBlank()) return
+        val namespace = artworkNamespace(instanceId, base, token)
+        val access = artworkAccess.value
+        val connection = credentials()
+        if (access.blocked || namespace != access.namespace || connection != access.authorizedConnection) {
+            resetArtworkAccess(ArtworkAccess(namespace, connection))
         }
-        val (address, credential, generation) = synchronized(this@TvClient) { Triple(base, token, connectionGeneration) }
-        val key="$generation:$address$path@$revision"
-        imageRequests.load(key) {
-            val bytes = TvImageTransport.read(address, credential, path) ?: return@load null
-            currentCoroutineContext().ensureActive()
-            val options=android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds=true }
-            android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,options)
-            if(options.outWidth<=0 || options.outHeight<=0)return@load null
-            options.inSampleSize=1
-            while(maxOf(options.outWidth/options.inSampleSize,options.outHeight/options.inSampleSize)>limit)options.inSampleSize*=2
-            options.inJustDecodeBounds=false
-            currentCoroutineContext().ensureActive()
-            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,options)
-            currentCoroutineContext().ensureActive()
-            synchronized(this@TvClient) {
-                if (connectionGeneration != generation) null else bitmap?.also { covers.put(key,it) }
+    }
+
+    @Synchronized internal fun releaseArtwork() = resetArtworkAccess(ArtworkAccess(blocked = true))
+
+    private fun resetArtworkAccess(access: ArtworkAccess = ArtworkAccess()) {
+        artworkAccess.value = access
+        imageRequests.clear()
+        covers.evictAll()
+    }
+
+    private fun isCurrent(connection: ImageConnection, access: ArtworkAccess = connection.access): Boolean =
+        access === artworkAccess.value && connection.address == base && connection.credential == token
+
+    suspend fun image(path: String, revision: String): Bitmap? = withContext(Dispatchers.IO) {
+        val source = TvArtworkSource.of(path) ?: return@withContext null
+        val connection = synchronized(this@TvClient) { ImageConnection(base, token, artworkAccess.value) }
+        if (connection.access.blocked || connection.credential.isBlank() || connection.address.isBlank()) return@withContext null
+        val namespace = connection.access.namespace?.takeIf {
+            connection.access.authorizedConnection == (connection.address to connection.credential)
+        }
+        val imageKey = source.cacheKey(
+            namespace ?: artworkNamespace("memory", connection.address, connection.credential) ?: return@withContext null,
+            revision,
+        )
+        val diskKey = imageKey.takeIf { namespace != null }
+        val memoryKey = "${System.identityHashCode(connection.access)}:$imageKey"
+        val bitmap = imageRequests.load(memoryKey) {
+            if (!isCurrent(connection)) return@load null
+            loadArtwork(source, connection, diskKey, memoryKey)
+        }
+        if (isCurrent(connection)) bitmap else null
+    }
+
+    private suspend fun loadArtwork(source: TvArtworkSource, connection: ImageConnection, diskKey: String?, memoryKey: String): Bitmap? {
+        val coroutineContext = currentCoroutineContext()
+        var saved = diskKey?.let(artworkDisk::read)
+        coroutineContext.ensureActive()
+        if (!isCurrent(connection)) return null
+        if (saved != null && saved.isFresh(System.currentTimeMillis())) {
+            val bitmap = decodeArtwork(saved.bytes, source.decodeLimit, saved.contentType)
+            if (bitmap != null) return rememberArtwork(connection, memoryKey, bitmap, saved.expiresAt)
+            discardArtwork(connection, diskKey)
+            saved = null
+        }
+
+        suspend fun request(etag: String? = null) = TvImageTransport.read(connection.address, connection.credential, source.path, etag)
+        // If the server's 304 omits the opted-in policy, fetch without a validator.
+        var response = request(saved?.etag)
+        coroutineContext.ensureActive()
+        if (!isCurrent(connection)) return null
+        val reused = response.status == 304 && saved != null && response.etag == saved.etag && response.expiresAt != null
+        if (response.status == 304 && !reused) {
+            discardArtwork(connection, diskKey)
+            response = request()
+        }
+        coroutineContext.ensureActive()
+        if (!isCurrent(connection)) return null
+        if (response.status == 401 || response.status == 403) {
+            val blocked = synchronized(this) {
+                if (!isCurrent(connection)) return null
+                ArtworkAccess(blocked = true).also(::resetArtworkAccess)
             }
+            discardArtwork(connection, diskKey, blocked)
+            return null
         }
+        if (response.status == 404) discardArtwork(connection, diskKey)
+        val bytes = if (reused) saved?.bytes else response.bytes
+        val contentType = if (reused) saved?.contentType else response.contentType
+        if (bytes == null || contentType == null || contentType !in ARTWORK_CONTENT_TYPES) {
+            if (response.status == 200) discardArtwork(connection, diskKey)
+            return null
+        }
+        val bitmap = decodeArtwork(bytes, source.decodeLimit, contentType)
+        coroutineContext.ensureActive()
+        val expiresAt = response.expiresAt
+        val etag = response.etag
+        if (bitmap == null || expiresAt == null || etag == null) {
+            discardArtwork(connection, diskKey)
+        } else if (diskKey != null && isCurrent(connection)) {
+            val entry = TvArtworkEntry(etag, expiresAt, contentType, bytes)
+            if (entry.isValid()) {
+                artworkDisk.write(diskKey, entry) { temporary, destination ->
+                    synchronized(this) {
+                        if (coroutineContext.isActive && isCurrent(connection)) temporary.renameTo(destination)
+                    }
+                }
+            } else discardArtwork(connection, diskKey)
+        }
+        return bitmap?.let { rememberArtwork(connection, memoryKey, it, response.expiresAt) }
+    }
+
+    private fun discardArtwork(connection: ImageConnection, diskKey: String?, access: ArtworkAccess = connection.access) {
+        if (diskKey == null) return
+        artworkDisk.remove(diskKey) { cached ->
+            synchronized(this) { if (isCurrent(connection, access)) cached.delete() }
+        }
+    }
+
+    private suspend fun rememberArtwork(connection: ImageConnection, key: String, bitmap: Bitmap, expiresAt: Long?): Bitmap? {
+        currentCoroutineContext().ensureActive()
+        return synchronized(this) {
+            if (!isCurrent(connection)) null else bitmap.also { covers.put(key, MemoryArtwork(it, expiresAt)) }
+        }
+    }
+
+    private fun decodeArtwork(bytes: ByteArray, limit: Int, contentType: String?): Bitmap? {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0 || options.outMimeType != contentType) return null
+        options.inSampleSize = 1
+        while (maxOf(options.outWidth / options.inSampleSize, options.outHeight / options.inSampleSize) > limit) {
+            options.inSampleSize *= 2
+        }
+        options.inJustDecodeBounds = false
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     }
     suspend fun request(path: String, method: String = "GET", body: JSONObject? = null, connection: Pair<String, String> = credentials()): String = withContext(Dispatchers.IO) {
         require(path.startsWith("/api/v1/"))

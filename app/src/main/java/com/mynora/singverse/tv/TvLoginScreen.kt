@@ -47,9 +47,10 @@ private val LoginMuted = Muted
         if (state.page == LoginPage.QR && app.foreground) state.resumePairing()
         onDispose { if (state.page == LoginPage.QR && !app.connected) state.pausePairing() }
     }
-    BackHandler(enabled = state.page != LoginPage.METHODS || state.error.isNotBlank() || app.error.isNotBlank()) {
+    val showConnectionError = state.page == LoginPage.METHODS && app.error.isNotBlank()
+    BackHandler(enabled = state.page != LoginPage.METHODS || state.error.isNotBlank() || showConnectionError) {
         when {
-            app.error.isNotBlank() -> app.error = ""
+            showConnectionError -> app.error = ""
             state.error.isNotBlank() -> state.clearError()
             else -> state.back()
         }
@@ -85,7 +86,7 @@ private val LoginMuted = Muted
                     key(state.page, state.mfaRequired) {
                         when (state.page) {
                             LoginPage.QR -> LoginQr(state)
-                            LoginPage.METHODS -> LoginMethods(state)
+                            LoginPage.METHODS -> LoginMethods(state, app.error)
                             LoginPage.MANUAL -> LoginForm(state)
                             LoginPage.DISCOVERY -> LoginDiscovery(state, app.discovery)
                             LoginPage.HISTORY -> LoginHistory(state)
@@ -285,13 +286,18 @@ private val LoginMuted = Muted
     }
 }
 
-@Composable private fun BoxScope.LoginMethods(state: TvLogin) {
+@Composable private fun BoxScope.LoginMethods(state: TvLogin, connectionError: String) {
     val initial = remember { FocusRequester() }; InitialFocus(initial)
     val methods = listOf(LoginPage.MANUAL, LoginPage.DISCOVERY, LoginPage.QR)
     val badgeTones = listOf(Glass.violet, Accent, Brand)
     Column(Modifier.align(Alignment.TopStart).padding(start = 64.dp, top = 114.dp).width(832.dp)) {
         Text("让你的音乐，登上大屏。", color = Ivory, fontSize = 38.sp, lineHeight = 50.sp, fontWeight = FontWeight.Bold)
-        Text("选择一种方式，连接你的音乐库", color = LoginMuted, fontSize = 15.5.sp, modifier = Modifier.padding(top = 10.dp))
+        Text(
+            connectionError.ifBlank { "选择一种方式，连接你的音乐库" },
+            color = if (connectionError.isBlank()) LoginMuted else Danger,
+            fontSize = 15.5.sp,
+            modifier = Modifier.padding(top = 10.dp),
+        )
         Row(Modifier.padding(top = 30.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             listOf(
                 Triple("user", "账号登录", "使用 NAS 地址和管理员账号"),

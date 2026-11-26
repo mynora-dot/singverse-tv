@@ -6,9 +6,15 @@ import androidx.compose.runtime.*
 import androidx.media3.common.*
 import androidx.media3.exoplayer.ExoPlayer
 import org.json.JSONObject
-import kotlin.math.pow
 
-data class PlayerTrack(val group: Int, val index: Int, val type: Int, val label: String, val selected: Boolean, val channels: Int, val sourceId: String = "")
+data class PlayerTrack(
+    val group: Int,
+    val index: Int,
+    val type: Int,
+    val selected: Boolean,
+    val channels: Int,
+    val sourceId: String,
+)
 data class OutputRoute(val id: Int, val name: String)
 internal const val GENERATED_BACKING_SOURCE = "derived:backing"
 class PlaybackOptions(private val context: Context, private val player: ExoPlayer, private val audio: KaraokeAudioProcessor) {
@@ -16,48 +22,19 @@ class PlaybackOptions(private val context: Context, private val player: ExoPlaye
     var tracks by mutableStateOf(listOf<PlayerTrack>()); private set
     var routes by mutableStateOf(listOf<OutputRoute>()); private set
     var route by mutableStateOf("系统默认"); private set
-    var channel by mutableStateOf("STEREO"); private set
-    var semitones by mutableIntStateOf(0); private set
-    var volume by mutableIntStateOf(prefs.getInt("volume", 100).coerceIn(0,100)); private set
-    var lyricOffset by mutableIntStateOf(prefs.getInt("lyric-offset",0).coerceIn(-5000,5000)); private set
-    var sidecars by mutableStateOf(listOf<Pair<String,List<TextLine>>>()); private set
-    var plainLyrics by mutableStateOf(listOf<Pair<String,String>>()); private set
-    var textLoading by mutableStateOf(false); private set
-    var textLoadFailed by mutableStateOf(false); private set
-    var textWarnings by mutableStateOf(listOf<String>()); private set
-    var textSelection by mutableStateOf("内嵌字幕"); private set
-    var activeLine by mutableStateOf<TextLine?>(null); private set
-    var nextLine by mutableStateOf<TextLine?>(null); private set
-    var lyricPosition by mutableLongStateOf(0); private set
-    var textStatus by mutableStateOf(""); private set
+    private var channel by mutableStateOf("STEREO")
     var roleOriginal by mutableStateOf(""); private set
     var roleBacking by mutableStateOf(""); private set
     private var songKey = ""
-    private var songId = ""
-    var audioDelay by mutableIntStateOf(prefs.getInt("audio-delay",0).coerceIn(0,500)); private set
     private val outputRoutes = AudioOutputRoutes.create(context, player) { removed ->
         if (removed) route = "系统默认"
         refreshRoutes()
     }
     val canSelectOutput: Boolean get() = outputRoutes.selectable
-    init { player.volume=volume/100f; audio.delayMs=audioDelay; refreshRoutes() }
+    init { refreshRoutes() }
     private var sourceAudio = listOf<String>()
     private var sourceAudioLabels = listOf<String>()
     private var sourceRepresentation = true
-    private var audioOnly = false
-    private var textChoiceExplicit = false
-    fun setAudioOnly(value: Boolean) { audioOnly = value; selectAudioLyrics() }
-    private fun selectAudioLyrics() {
-        if (audioOnly && !textChoiceExplicit && (sidecars.isNotEmpty() || plainLyrics.isNotEmpty())) {
-            // The endpoint orders original sidecars before the metadata fallback.
-            textSelection = sidecars.firstOrNull()?.first ?: plainLyrics.first().first
-            val current = player.trackSelectionParameters
-            val updated = current.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-            // setAudioOnly also runs from onTracksChanged; avoid feeding unchanged parameters
-            // back into track selection each time that callback reports the selected tracks.
-            if (updated != current) player.trackSelectionParameters = updated
-        }
-    }
     fun configureSource(streams: org.json.JSONArray?, mapping: org.json.JSONArray?, original: Boolean = true, generatedBacking: Boolean = false) {
         sourceRepresentation = original
         val mapped = mapping?.objects().orEmpty().filter { it.optString("kind")=="audio" }.map { it.optString("sourceId") }
@@ -82,7 +59,7 @@ class PlaybackOptions(private val context: Context, private val player: ExoPlaye
                 if(match>=0 && sourceAudioLabels.count { it==label }==1) sourceAudio.getOrElse(match) { "" }
                 else if(count==sourceAudio.size) sourceAudio.getOrElse(ordinal) { "" } else ""
             } else ""
-            PlayerTrack(groupIndex,index,group.type,listOfNotNull(f.label, f.language?.takeUnless { it=="und" },f.sampleMimeType, f.channelCount.takeIf { it>0 }?.let { "$it 声道" }).joinToString(" · ").ifBlank { "轨道 ${index+1}" },group.isTrackSelected(index),f.channelCount,sourceId)
+            PlayerTrack(groupIndex, index, group.type, group.isTrackSelected(index), f.channelCount, sourceId)
         } }
     }
     fun selectSource(sourceId: String): Boolean {
@@ -90,54 +67,47 @@ class PlaybackOptions(private val context: Context, private val player: ExoPlaye
         if(!target.selected)selectTrack(target)
         return true
     }
-    fun selectTrack(track: PlayerTrack) {
-        val group=player.currentTracks.groups.getOrNull(track.group) ?: return
-        player.trackSelectionParameters=player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(track.type,false).setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup,track.index)).build()
-        if(track.type==C.TRACK_TYPE_TEXT) { textChoiceExplicit = true; textSelection="内嵌字幕" }
+    internal fun setEmbeddedSubtitlesEnabled(enabled: Boolean) {
+        val current = player.trackSelectionParameters
+        val updated = current.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled).build()
+        if (updated != current) player.trackSelectionParameters = updated
+        if (enabled) selectDefaultSubtitle()
+    }
+    fun selectDefaultSubtitle() {
+        if (C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes) return
+        val subtitles = tracks.filter { it.type == C.TRACK_TYPE_TEXT }
+        if (subtitles.any { it.selected }) return
+        val groups = player.currentTracks.groups
+        val default = subtitles.firstOrNull { track ->
+            groups[track.group].getTrackFormat(track.index).selectionFlags and C.SELECTION_FLAG_DEFAULT != 0
+        }
+        (default ?: subtitles.firstOrNull())?.let(::selectTrack)
+    }
+    private fun selectTrack(track: PlayerTrack) {
+        val group = player.currentTracks.groups.getOrNull(track.group) ?: return
+        val current = player.trackSelectionParameters
+        val updated = current.buildUpon()
+            .setTrackTypeDisabled(track.type, false)
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.index))
+            .build()
+        if (updated == current) return
+        player.trackSelectionParameters = updated
         refreshTracks()
     }
-    fun hideText() { textChoiceExplicit = true; textSelection="关闭"; activeLine=null; nextLine=null; player.trackSelectionParameters=player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT,true).build() }
-    fun chooseText(name: String) { textChoiceExplicit = true; if(name=="关闭") { hideText();return };textSelection=name;activeLine=null;nextLine=null;player.trackSelectionParameters=player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT,name!="内嵌字幕").build() }
-    fun selectChannel(mode: String) { require(mode in listOf("STEREO","LEFT","RIGHT","MONO"));require(mode=="STEREO" || tracks.any { it.type==C.TRACK_TYPE_AUDIO && it.selected && it.channels==2 }) { "当前音轨不是双声道，无法拆分左右声道" };channel=mode;audio.channelMode=mode }
-    fun setPitch(value: Int) { semitones=value.coerceIn(-6,6); player.playbackParameters=PlaybackParameters(1f,2.0.pow(semitones/12.0).toFloat()) }
-    fun changeVolume(value: Int) {volume=value.coerceIn(0,100);player.volume=volume/100f;prefs.edit().putInt("volume",volume).apply()}
-    fun offset(value: Int) {lyricOffset=value.coerceIn(-5000,5000);prefs.edit().putInt("lyric-offset",lyricOffset).apply()}
-    fun delayAudio(value: Int) { audioDelay=value.coerceIn(0,500);audio.delayMs=audioDelay;prefs.edit().putInt("audio-delay",audioDelay).apply() }
     fun refreshRoutes() { routes = outputRoutes.outputs() }
     fun chooseRoute(id: Int?) { route = outputRoutes.choose(id) }
     fun beginSong(id: String, revision: String) {
-        sourceAudio=emptyList();sourceAudioLabels=emptyList();songId=id;songKey="$id:$revision";sidecars=emptyList();plainLyrics=emptyList();activeLine=null;nextLine=null;textChoiceExplicit=false;textLoading=true;textLoadFailed=false;textWarnings=emptyList();textStatus="读取歌词与字幕…";textSelection="内嵌字幕";channel="STEREO";audio.channelMode="STEREO";setPitch(0)
-        roleOriginal=prefs.getString("original:$songKey","") ?: "";roleBacking=prefs.getString("backing:$songKey","") ?: ""
-        player.trackSelectionParameters=player.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_AUDIO).clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT,false).build()
+        sourceAudio = emptyList()
+        sourceAudioLabels = emptyList()
+        songKey = "$id:$revision"
+        channel = "STEREO"
+        audio.channelMode = channel
+        roleOriginal = prefs.getString("original:$songKey", "").orEmpty()
+        roleBacking = prefs.getString("backing:$songKey", "").orEmpty()
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .build()
     }
-    fun applyText(id: String,result: JSONObject) {
-        if(songId!=id)return
-        textLoading=false;textLoadFailed=false
-        val timed = mutableListOf<Pair<String,List<TextLine>>>()
-        val plain = mutableListOf<Pair<String,String>>()
-        val warnings = result.optJSONArray("warnings")?.let { array -> (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() } }?.toMutableList() ?: mutableListOf()
-        result.optJSONArray("items")?.objects().orEmpty().forEach { item ->
-            val format = item.optString("format").trim().lowercase(java.util.Locale.ROOT)
-            val label = (if (item.optString("id").startsWith("metadata")) "元数据歌词 · " else "") + if (format == "text") "未同步" else format.uppercase(java.util.Locale.ROOT)
-            val text = item.optString("text")
-            if (format == "text") {
-                if (text.isNotBlank() && text.length <= 131072) plain += label to text
-                else if (text.length > 131072) warnings += "未同步歌词超过显示限制"
-            } else {
-                val parsed = runCatching { TextTimeline.parse(format, text) }.getOrNull()
-                if (!parsed.isNullOrEmpty()) timed += label to parsed
-                else if (text.isNotBlank()) warnings += "${format.uppercase(java.util.Locale.ROOT)} 歌词无法解析"
-            }
-        }
-        sidecars=timed;plainLyrics=plain;textWarnings=warnings
-        selectAudioLyrics()
-        val count=sidecars.size+plainLyrics.size
-        textStatus=if(count==0) "没有可用歌词文件；内嵌轨道以播放器识别为准" else "$count 个歌词/字幕轨可用"
-        if(textWarnings.isNotEmpty())textStatus+=" · ${textWarnings.first()}"
-    }
-    fun beginTextRead(id: String) { if(songId==id){textLoading=true;textLoadFailed=false;textStatus="读取歌词与字幕…"} }
-    fun textFailed(id: String){if(songId==id){textLoading=false;textLoadFailed=true;textStatus="歌词读取失败，可在播放设置重试"}}
-    fun tick(position: Long){lyricPosition=position-lyricOffset;val preview=tvLyricPreview(sidecars.firstOrNull { it.first==textSelection }?.second.orEmpty(),lyricPosition);activeLine=preview.current;nextLine=preview.next}
     private fun currentSelection(): String {
         val selected=tracks.firstOrNull { it.type==C.TRACK_TYPE_AUDIO && it.selected } ?: return ""
         return if(selected.sourceId.isNotBlank()) "${selected.sourceId}|$channel" else "${selected.group}:${selected.index}:$channel"
@@ -179,10 +149,14 @@ class PlaybackOptions(private val context: Context, private val player: ExoPlaye
         }
     }
     fun isChannelRole(role: String)=listOf("|LEFT","|RIGHT",":LEFT",":RIGHT").any { role.endsWith(it) }
-    fun markRole(original: Boolean){val value=currentSelection();if(value.isBlank())return;if(original)roleOriginal=value else roleBacking=value;prefs.edit().putString("${if(original) "original" else "backing"}:$songKey",value).apply()}
+    private fun markRole(original: Boolean){val value=currentSelection();if(value.isBlank())return;if(original)roleOriginal=value else roleBacking=value;prefs.edit().putString("${if(original) "original" else "backing"}:$songKey",value).apply()}
     fun useRole(original: Boolean): Boolean {
         val (track, mode)=roleTrack(original) ?: return false
-        if(!track.selected)selectTrack(track)
+        if (!track.selected) {
+            selectTrack(track)
+            // Paused audio cannot drain the samples already queued for the old track.
+            if (!player.playWhenReady) player.seekTo(player.currentPosition)
+        }
         // roleTrack already validated the target channel count. Media3 may still report the
         // previous selected track until onTracksChanged after the override is applied.
         if(channel!=mode){channel=mode;audio.channelMode=mode}

@@ -130,6 +130,8 @@ TV 非转码增强新增设备专用 text-tracks 与 releases/current、releases
 
 分类封面新增管理员GET/PUT/DELETE /classification/tags/{id}/cover，以及Bearer只读 /tv/library/classification-tags/{id}/cover。首次上传version为空，覆盖/移除带当前coverVersion；内容SHA-256与标签revision独立。正式标签新增coverPath/coverVersion；停用标签对TV封面返回404，完整限制见OpenAPI。
 
+TV 与管理员路由的歌曲展示封面、正式分类封面和歌手图片支持私有缓存。返回 `200` 或 `304` 时包含 `Cache-Control: private, max-age=300`，ETag 为响应图片字节的 SHA-256，按 Cookie 或 Bearer 隔离。`If-None-Match` 在鉴权并确定当前图片后比较，命中返回无正文的 `304`。歌曲封面使用 `variant=thumbnail` 可请求最长边 512 像素的 PNG。正式歌曲可附带已提交的原图摘要 `coverVersion`，用于提示刷新，实际下载以当前返回的 ETag 为准。错误和候选预览继续返回 `no-store`。
+
 歌手库按歌曲有效署名自动汇总并提供只读查询，歌曲订正通过现有审核应用接口保存 NAS 歌手覆盖，恢复接口需要 revision。歌手响应新增 automatic、fetchState、图片来源字段；ExternalTrack 新增可选 artistRefs，旧数据按空列表兼容。详见 OpenAPI。
 
 共享歌单新增 `/api/v1/playlists` 管理接口、`/generate` 建议预览及 TV 只读歌单列表/详情/歌曲接口。创建需稳定 requestId，编辑与删除需 revision；生成返回候选范围和草稿，不自动保存。管理与 TV 封面路径分别使用相应身份鉴权。

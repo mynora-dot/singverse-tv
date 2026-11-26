@@ -43,36 +43,4 @@ class TvPlayerModelsTest {
         // A later queue entry may legitimately repeat the currently singing song.
         assertEquals("repeat", tvNextQueuedItem(listOf(Item("current", "PLAYING"), Item("repeat", "WAITING")), Item::status, Item::id, "current")?.id)
     }
-
-    @Test fun lyricsFollowExistingTimelineBoundariesAndPreviewTheNextLine() {
-        val lines = TextTimeline.parse("lrc", "[00:01.00]第一句\n[00:03.00]第二句\n[00:05.00]第三句")
-        assertEquals(TvLyricPreview(null, lines[0]), tvLyricPreview(lines, 999))
-        assertEquals(TvLyricPreview(lines[0], lines[1]), tvLyricPreview(lines, 1000))
-        assertEquals(TvLyricPreview(lines[1], lines[2]), tvLyricPreview(lines, 3000))
-        assertEquals(TvLyricPreview(lines[2], null), tvLyricPreview(lines, 5000))
-        assertEquals(TvLyricPreview(null, null), tvLyricPreview(emptyList(), 3000))
-    }
-
-    @Test fun subtitleGapsAndEnhancedWordTimingRemainUnchanged() {
-        val subtitle = TextTimeline.parse("srt", "1\n00:00:01,000 --> 00:00:02,000\n第一句\n\n2\n00:00:04,000 --> 00:00:05,000\n第二句")
-        assertEquals(TvLyricPreview(null, subtitle[1]), tvLyricPreview(subtitle, 2500))
-        assertEquals(TvLyricPreview(null, subtitle[1]), tvLyricPreview(subtitle, 2000))
-        assertEquals(TvLyricPreview(null, null), tvLyricPreview(subtitle, 5000))
-        val enhanced = TextTimeline.parse("lrc", "[00:01.00]<00:01.00>唱<00:01.50>歌\n[00:03.00]下一句")
-        val preview = tvLyricPreview(enhanced, 1600)
-        assertEquals(listOf(TimedWord(1000, "唱"), TimedWord(1500, "歌")), preview.current?.words)
-        assertEquals(enhanced[1], preview.next)
-    }
-
-    @Test fun previewUsesActualPausedPositionAndExistingSignedLyricOffset() {
-        val lines = TextTimeline.parse("lrc", "[00:01.00]第一句\n[00:03.00]第二句\n[00:05.00]第三句")
-        val pausedPlaybackPosition = 3500L
-        val paused = tvLyricPreview(lines, pausedPlaybackPosition)
-        assertEquals(TvLyricPreview(lines[1], lines[2]), paused)
-        // No timer advances a paused lyric: repeated snapshots use the same real position.
-        repeat(3) { assertEquals(paused, tvLyricPreview(lines, pausedPlaybackPosition)) }
-        // PlaybackOptions subtracts positive delay; negative delay brings lyrics forward.
-        assertEquals(TvLyricPreview(lines[0], lines[1]), tvLyricPreview(lines, pausedPlaybackPosition - 1000))
-        assertEquals(TvLyricPreview(lines[2], null), tvLyricPreview(lines, pausedPlaybackPosition - (-2000)))
-    }
 }
