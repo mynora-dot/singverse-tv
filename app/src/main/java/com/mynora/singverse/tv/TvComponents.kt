@@ -50,14 +50,12 @@ internal val Panel = Glass.surface
 internal val Elevated = Glass.surfaceStrong
 internal val Paper = Glass.inkPrimary
 internal val Muted = Glass.inkSecondary
-internal val Primary = Glass.inkPrimary
 internal val OnBrand = Glass.onBrand
 internal val Brand = Glass.brand
 internal val Accent = Glass.cyan
 internal val Focus = Color(0xFFFFFFFF)
 internal val Success = Color(0xFF34C759)
 internal val Danger = Color(0xFFFF453A)
-internal val Hairline = Glass.edgeBottom
 
 internal object TvShape {
     val control = GlassShape.control
@@ -283,13 +281,6 @@ internal fun Modifier.tvPlatinumFocus(focused: Boolean, shape: Shape = TvShape.c
     }
 }
 
-@Composable internal fun Heading(title: String, subtitle: String = "") {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, color = Paper, fontSize = 26.sp, lineHeight = 33.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (subtitle.isNotEmpty()) Text(subtitle, color = Muted, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-    }
-}
-
 @Composable internal fun SectionTitle(title: String, detail: String = "") {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(title, color = Paper, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
@@ -501,65 +492,6 @@ internal fun JSONObject?.artworkVersion(field: String = "coverVersion"): String 
     ) {
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), "歌曲封面", Modifier.fillMaxSize(), contentScale = contentScale)
         else MusicMark(Modifier.size(26.dp).align(Alignment.Center), tint = Paper.copy(alpha = 0.34f))
-    }
-}
-
-@Composable internal fun SongCard(
-    app: TvApp,
-    song: JSONObject,
-    modifier: Modifier = Modifier,
-    imageHeight: Dp = Dp.Unspecified,
-    metadataVerticalPadding: Dp = 7.dp,
-) {
-    var focused by remember { mutableStateOf(false) }
-    val shape = TvShape.card
-    Button(
-        onClick = { app.openSong(song) },
-        modifier = modifier
-            .tvFocusTarget("song:${song.optString("id")}")
-            .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.036f)
-            .then(
-                if (focused) Modifier.glassSurface(shape, highlighted = true, base = Glass.surfaceFocus, elevation = 12.dp)
-                else Modifier
-            )
-            .tvFocus(focused, shape),
-        scale = ButtonDefaults.scale(focusedScale = 1f),
-        contentPadding = PaddingValues(7.dp),
-        shape = ButtonDefaults.shape(shape),
-        colors = ButtonDefaults.colors(
-            containerColor = Color.Transparent,
-            contentColor = Paper,
-            focusedContainerColor = Color.Transparent,
-            focusedContentColor = Paper,
-        ),
-    ) {
-        Column(Modifier.fillMaxWidth()) {
-            Box(Modifier.align(Alignment.CenterHorizontally)) {
-                val artworkModifier = if (imageHeight == Dp.Unspecified) Modifier.fillMaxWidth().aspectRatio(1f)
-                else Modifier.widthIn(max = imageHeight).fillMaxWidth().aspectRatio(1f)
-                SongArtwork(app, song, artworkModifier)
-                val playingId = app.snapshot.optJSONArray("queue")?.objects()?.firstOrNull { it.optString("status") == "PLAYING" }?.optJSONObject("song")?.optString("id").orEmpty()
-                if (playingId.isNotBlank() && playingId == song.optString("id")) {
-                    Row(
-                        Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(6.dp)
-                            .brandGlassSurface(GlassShape.pill)
-                            .padding(horizontal = 7.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        LiveEqualizer(app.playing, color = OnBrand)
-                        Text(stateLabel(app.playerState), color = OnBrand, fontSize = 9.5.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-            Column(Modifier.padding(horizontal = 3.dp, vertical = metadataVerticalPadding), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(song.optString("title"), color = Paper, fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artists(), color = Muted, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
     }
 }
 

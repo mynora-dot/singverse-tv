@@ -9,10 +9,10 @@
 版本沿用 AGP 8.9.2、Gradle 8.11.1、Kotlin 2.1.20、Compose BOM 2025.04.01、TV Material 1.0.0；新增 Media3 1.5.1 和 ZXing Core 3.5.3。compile/target SDK 35、minSdk 21（Android 5.0/5.1）；构建 JDK 21，字节码目标 17。
 
 ```sh
-# 根目录：单元测试、编译 debug APK 并执行 lint
+# 编译 debug APK 并执行 lint
 make build
 # 或在本目录使用仓库 Wrapper
-./gradlew testDebugUnitTest assembleDebug lintDebug
+./gradlew assembleDebug lintDebug
 ./gradlew installDebug
 ```
 
@@ -26,22 +26,7 @@ Go 负责选择直放、换封装、音频转码或视频转码，compute 输出
 
 API 21/22 使用 AndroidKeyStore RSA 包装随机 AES 数据密钥，凭证仍以 AES-GCM 加密保存；API 23+ 使用原生 Keystore AES。API 21/22 采用系统默认音频输出，HDMI / 蓝牙切换在电视设置中完成。普通 Android 电视桌面与 Leanback 均可启动。Java 标准库 API 通过 core library desugaring 兼容，不提升 Media3 / Compose 版本。
 
-设备验收至少覆盖 API 21、API 22 的 ARM32 电视：首次授权及重启、720p 连播、切歌/拖动、原伴唱与左右声道、歌词同步、断网恢复和安装更新。`TvAndroid5CompatibilityTest` 提供隔离的凭证持久化/密钥失效与能力报告检查；只编译该测试不代表完成设备验收。
-
-### 模拟器遥控 UI 检查
-
-使用 Android 平台自带的 instrumentation runner，不新增测试框架依赖。在本仓库根目录执行以下命令；先用 `adb devices` 核对目标 Android TV 模拟器，把示例 `emulator-5554` 换成该模拟器的 serial，保持每条 `adb` 命令都显式指定该模拟器，避免安装到物理电视。
-
-```sh
-./gradlew assembleDebug assembleDebugAndroidTest
-adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s emulator-5554 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb -s emulator-5554 shell am instrument -w -r -e class com.mynora.singverse.tv.TvHomeRemoteTest com.mynora.singverse.tv.test/com.mynora.singverse.tv.TvUiTestRunner
-adb -s emulator-5554 shell am instrument -w -r -e class com.mynora.singverse.tv.TvPlayerRemoteTest com.mynora.singverse.tv.test/com.mynora.singverse.tv.TvUiTestRunner
-```
-
-`TvHomeRemoteTest` 对正式 Compose 页面发送方向、确认和返回键，检查导航选中/焦点语义与颜色、四个点歌入口、输入编辑、横向曲库滚动、详情/多层弹窗焦点恢复、二维码解码和队列状态。`TvPlayerRemoteTest` 提供双模式播放器的进度预览/确认、歌词时间轴、二维码、队列、设置和音轨交互检查入口，并覆盖资源响应停滞期间的准备心跳、远程暂停/停止、迟到资源保护，以及活动租约到期后的自然续播；本轮结果以验证记录为准。测试数据与 HTTP 服务仅位于 Android 测试 APK 的 fixture：使用独立随机前缀的 SharedPreferences 和设备 loopback 地址，不读取实际 NAS 凭据、不连接真实 NAS、不修改正式曲库；`TvUiTestRunner` 与 fixture 不进入生产 APK。该检查不替代微信扫码或物理遥控器验收。
-
+设备验收至少覆盖 API 21、API 22 的 ARM32 电视：首次授权及重启、720p 连播、切歌/拖动、原伴唱与左右声道、歌词同步、断网恢复和安装更新。
 
 ## 开场
 

@@ -71,29 +71,6 @@ internal fun tvAudioQualityLabels(container: String = "", stream: TvPlayerStream
     return labels.distinctBy { it.lowercase(Locale.ROOT) }
 }
 
-internal fun tvPlayerDuration(durationMs: Long): String {
-    val seconds = durationMs.coerceAtLeast(0) / 1000
-    return if (seconds >= 3600) "${seconds / 3600}:${(seconds / 60 % 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}"
-    else "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
-}
-
-/** [genres] are names resolved from the applied GENRE tag IDs and the NAS vocabulary. */
-internal fun tvSongMetadataLabels(
-    album: String = "",
-    releaseDate: String = "",
-    genres: List<String> = emptyList(),
-    durationMs: Long = 0,
-): List<Pair<String, String>> = buildList {
-    album.realPlayerValue().takeIf { it.isNotBlank() }?.let { add("专辑" to it) }
-    val styles = genres.map { it.realPlayerValue() }.filter { it.isNotBlank() }.distinct()
-    if (styles.isNotEmpty()) add("风格" to styles.joinToString(" / "))
-    releaseDate.realPlayerValue().takeIf { it.isNotBlank() }?.let { date ->
-        val year = Regex("^([1-9]\\d{3})(?:$|[-/.年])").find(date)?.groupValues?.get(1)
-        add(if (year != null) "年份" to year else "发行" to date)
-    }
-    if (durationMs > 0) add("时长" to tvPlayerDuration(durationMs))
-}
-
 /** Mirrors START: a handed-off item precedes waiting items, including after queue reordering. */
 internal fun <T> tvNextQueuedItem(
     queue: List<T>,

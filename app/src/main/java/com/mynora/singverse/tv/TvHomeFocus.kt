@@ -26,7 +26,6 @@ internal class TvHomeFocusMemory {
     var activeLowerShelf: HomeShelf = HomeShelf.HISTORY
     var bottomOrigin: String? = null
         private set
-    var shelfDivider: Float? = null
 
     fun center(key: String) = centers[key]
 

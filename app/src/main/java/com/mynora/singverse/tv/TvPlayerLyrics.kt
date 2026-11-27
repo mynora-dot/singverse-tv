@@ -4,21 +4,14 @@ package com.mynora.singverse.tv
 
 import android.util.TypedValue
 import android.view.View
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -34,9 +27,6 @@ import androidx.media3.common.text.Cue
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 import androidx.tv.material3.Text
-import kotlinx.coroutines.delay
-import kotlin.math.abs
-import kotlin.math.sin
 
 private val AudioLyricSize = 28.sp
 private val AudioSubtitleStyle = with(CaptionStyleCompat.DEFAULT) {
@@ -142,36 +132,4 @@ private fun String.lyricPreview(lines: Int): String = lineSequence().filter(Stri
         },
         modifier = modifier,
     )
-}
-
-/** A low-cost playback status animation. It does not read or imply an audio spectrum. */
-@Composable internal fun PlaybackAmbience(playing: Boolean, modifier: Modifier = Modifier) {
-    var phase by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(playing) {
-        while (playing) { delay(90); phase += .18f }
-    }
-    Canvas(modifier.semantics { contentDescription = "播放状态动画，非实时频谱" }) {
-        val count = 48
-        val stride = size.width / count
-        val barWidth = (stride * 0.44f).coerceAtLeast(2f)
-        val brush = Brush.horizontalGradient(
-            listOf(
-                Glass.brand.copy(alpha = if (playing) 0.48f else 0.16f),
-                Paper.copy(alpha = if (playing) 0.32f else 0.12f),
-                Glass.brandCoral.copy(alpha = if (playing) 0.48f else 0.16f),
-            )
-        )
-        repeat(count) { index ->
-            val envelope = .18f + .82f * abs(sin(index * .16f))
-            val pulse = if (playing) .28f + .72f * abs(sin(index * .58f + phase)) else .14f
-            val height = (size.height * envelope * pulse).coerceAtLeast(3f)
-            val top = (size.height - height) / 2f
-            drawRoundRect(
-                brush = brush,
-                topLeft = Offset(index * stride, top),
-                size = Size(barWidth, height),
-                cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
-            )
-        }
-    }
 }

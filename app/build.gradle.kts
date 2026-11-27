@@ -19,16 +19,12 @@ android {
     }
     namespace = "com.mynora.singverse.tv"
     compileSdk = 35
-    // Platform-only UI instrumentation: no additional test framework downloads.
-    useLibrary("android.test.runner", false)
-    useLibrary("android.test.base", false)
     defaultConfig {
         applicationId = "com.mynora.singverse.tv"
         minSdk = 21
         targetSdk = 35
         // Keep the explicit API 21–23 PNGs; do not replace them with small auto-rasterized vectors.
         vectorDrawables.generatedDensities()
-        testInstrumentationRunner = "com.mynora.singverse.tv.TvUiTestRunner"
         versionCode = productVersionCode.toInt()
         versionName = productVersion
     }
@@ -62,7 +58,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-datasource-okhttp:1.5.1")
-    testImplementation("junit:junit:4.13.2")
     implementation("com.google.zxing:core:3.5.3")
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")

@@ -1,17 +1,13 @@
 package com.mynora.singverse.tv
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -23,10 +19,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
@@ -218,41 +211,35 @@ import org.json.JSONObject
     focus: TvHomeFocusRoutes,
     modifier: Modifier = Modifier,
 ) {
-    val row1 = songs.take(2)
-    val row2 = songs.drop(2).take(2)
+    val rowCount = 2
+    val songsPerRow = 2
+    val rows = songs.take(rowCount * songsPerRow).chunked(songsPerRow)
+
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            row1.forEachIndexed { idx, song ->
-                val id = song.optString("id")
-                val focusKey = shelf.song(id)
-                key(id) {
-                    HomeHorizontalSongCard(
-                        app = app,
-                        song = song,
-                        rank = idx + 1,
-                        focusKey = focusKey,
-                        modifier = Modifier.weight(1f).fillMaxHeight().then(focus.activitySong(shelf, focusKey)),
-                    )
+        repeat(rowCount) { rowIndex ->
+            val rowSongs = rows.getOrNull(rowIndex).orEmpty()
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                rowSongs.forEachIndexed { columnIndex, song ->
+                    val id = song.optString("id")
+                    val focusKey = shelf.song(id)
+                    key(id) {
+                        HomeHorizontalSongCard(
+                            app = app,
+                            song = song,
+                            rank = rowIndex * songsPerRow + columnIndex + 1,
+                            focusKey = focusKey,
+                            modifier = Modifier.weight(1f).fillMaxHeight().then(focus.activitySong(shelf, focusKey)),
+                        )
+                    }
+                }
+                when {
+                    rowSongs.size == 1 -> Spacer(Modifier.weight(1f))
+                    rowSongs.isEmpty() && rowIndex > 0 -> Spacer(Modifier.fillMaxSize())
                 }
             }
-            if (row1.size == 1) Spacer(Modifier.weight(1f))
-        }
-        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            row2.forEachIndexed { idx, song ->
-                val id = song.optString("id")
-                val focusKey = shelf.song(id)
-                key(id) {
-                    HomeHorizontalSongCard(
-                        app = app,
-                        song = song,
-                        rank = idx + 3,
-                        focusKey = focusKey,
-                        modifier = Modifier.weight(1f).fillMaxHeight().then(focus.activitySong(shelf, focusKey)),
-                    )
-                }
-            }
-            if (row2.size == 1) Spacer(Modifier.weight(1f))
-            if (row2.isEmpty()) Spacer(Modifier.fillMaxSize())
         }
     }
 }
@@ -545,31 +532,6 @@ import org.json.JSONObject
     }
 }
 
-@Composable private fun HomeCoverShelfRow(
-    app: TvApp,
-    songs: List<JSONObject>,
-    shelf: HomeShelf,
-    focus: TvHomeFocusRoutes,
-    modifier: Modifier = Modifier,
-) {
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val gap = 14.dp
-        val tileWidth = ((maxWidth - gap * 3) / 4f).coerceAtLeast(1.dp)
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            songs.forEach { song ->
-                val id = song.optString("id")
-                val focusKey = shelf.song(id)
-                key(id) {
-                    HomeShelfCoverTile(
-                        app, song, focusKey,
-                        Modifier.width(tileWidth).fillMaxHeight().then(focus.activitySong(shelf, focusKey)),
-                    )
-                }
-            }
-        }
-    }
-}
-
 @Composable private fun HomeShelfCoverTile(app: TvApp, song: JSONObject, focusKey: String, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
     val available = song.optBoolean("available", true)
@@ -654,92 +616,6 @@ import org.json.JSONObject
             maxLines = lines,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-@Composable internal fun HomeCompactSong(
-    app: TvApp,
-    song: JSONObject,
-    focusKey: String,
-    modifier: Modifier = Modifier,
-    rank: Int? = null,
-    trailing: String = "",
-) {
-    var focused by remember { mutableStateOf(false) }
-    val available = song.optBoolean("available", true)
-    val shape = TvShape.row
-    val rankColor = when (rank) {
-        1 -> Brand
-        2 -> Glass.amber
-        3 -> Accent
-        else -> Glass.champagne
-    }
-    Button(
-        onClick = { app.openSong(song) },
-        modifier = modifier
-            .fillMaxWidth()
-            .tvFocusTarget(focusKey)
-            .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused && available, scaleTarget = 1.02f, liftDp = 0.8.dp)
-            .then(
-                if (focused) Modifier.glassSurface(shape, highlighted = true, intensity = 1f, base = Glass.surfaceFocus, elevation = 5.dp)
-                else Modifier
-            )
-            .tvFocus(focused, shape),
-        enabled = available,
-        contentPadding = PaddingValues(horizontal = if (rank == null) 8.dp else 10.dp, vertical = 2.dp),
-        scale = ButtonDefaults.scale(focusedScale = 1f),
-        shape = ButtonDefaults.shape(shape),
-        colors = ButtonDefaults.colors(
-            containerColor = Color.Transparent,
-            contentColor = Paper,
-            focusedContainerColor = Color.Transparent,
-            focusedContentColor = Paper,
-            disabledContainerColor = Color.Transparent,
-            disabledContentColor = Muted,
-        ),
-    ) {
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            if (rank != null) {
-                Text(
-                    rank.toString().padStart(2, '0'),
-                    color = rankColor,
-                    fontSize = 12.5.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.width(20.dp),
-                )
-            }
-            BoxWithConstraints {
-                SongArtwork(
-                    app,
-                    song,
-                    Modifier.size(minOf(if (rank == null) 30.dp else 38.dp, maxHeight)).alpha(if (available) 1f else .45f),
-                    shape = RoundedCornerShape(8.dp),
-                )
-            }
-            Column(Modifier.weight(1f)) {
-                Text(
-                    song.optString("title"),
-                    color = if (available) Paper else Muted,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    song.artists() + if (available) "" else " · 暂不可用",
-                    color = Muted,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (trailing.isNotEmpty()) Text(trailing, color = Muted, fontSize = 10.5.sp, lineHeight = 15.sp)
-            HomeGlyph("chevron", Modifier.size(11.dp), if (focused) Paper else Muted)
-        }
     }
 }
 
@@ -915,33 +791,6 @@ internal fun homeHistoryDate(value: String, now: java.time.ZonedDateTime = java.
     ) {
         Text(label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
-}
-
-@Composable private fun HomeTile(
-    modifier: Modifier,
-    shape: Shape = TvShape.control,
-    onClick: () -> Unit,
-    content: @Composable RowScope.(focused: Boolean) -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    Button(
-        onClick,
-        modifier
-            .onFocusChanged { focused = it.isFocused }
-            .tvSpringFocus(focused, scaleTarget = 1.045f, liftDp = 1.dp)
-            .glassSurface(shape, highlighted = focused, base = if (focused) Glass.surfaceFocus else Glass.surfaceCard, elevation = if (focused) 8.dp else 3.dp, backdropBlur = false)
-            .tvFocus(focused, shape),
-        contentPadding = PaddingValues(0.dp),
-        scale = ButtonDefaults.scale(focusedScale = 1f),
-        shape = ButtonDefaults.shape(shape),
-        colors = ButtonDefaults.colors(
-            containerColor = Color.Transparent,
-            contentColor = Paper,
-            focusedContainerColor = Color.Transparent,
-            focusedContentColor = Paper,
-        ),
-        content = { content(focused) },
-    )
 }
 
 @Composable internal fun HomeGlyph(kind: String, modifier: Modifier, color: Color) {

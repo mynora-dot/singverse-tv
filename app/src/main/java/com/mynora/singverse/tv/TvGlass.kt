@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -100,8 +99,6 @@ internal object Glass {
     // Anodized Platinum & Frost Silver accent (crisp Apple TV / Hi-Fi monochrome — zero yellow/brown cast)
     val champagneGold = Color(0xFFDCE4F0)
     val champagneBright = Color(0xFFF4F7FC)
-    val champagneSoft = Color(0x18FFFFFF)
-    val champagneRim = Color(0xB8FFFFFF)
 
     // Apple TV Illuminated Focus Surface (luminous platinum-white pill + deep obsidian ink)
     val focusFill = Color(0xFFF3F6FA)
@@ -113,7 +110,6 @@ internal object Glass {
     val brand = Color(0xFFE85668)
     val brandVivid = Color(0xFFE85668)
     val brandCoral = Color(0xFFF27382)
-    val brandSoft = Color(0x24E85668)
     val brandFocus = Color(0xFFD94456)
     val onBrand = Color(0xFFFFFFFF)
 
@@ -125,40 +121,24 @@ internal object Glass {
 
     // Obsidian black & deep graphite gray spatial palette (zero brown/olive cast)
     val canvas = Color(0xFF0A0B0E)
-    val canvasCenter = Color(0xFF13151B)
-    val canvasWarm = Color(0xFF0C0D11)
-    val canvasGlacier = Color(0xFF090A0D)
-    val canvasDeep = Color(0xFF050608)
-    val canvasElevated = Color(0xFF161920)
     val inkPrimary = Color(0xFFF3F4F6)
     val inkSecondary = Color(0xFF989DA8)
-    val inkTertiary = Color(0xFF6B707B)
 
     // Unified matte-graphite & subtle smoked surfaces
     val surface = Color(0xCC14171D)
     val surfaceStrong = Color(0xDC1A1E26)
-    val surfaceHover = Color(0xE6212630)
     val surfaceFloat = Color(0xCC15181F)    // Top nav, bottom bar, QR panel, search pill
     val surfaceCard = Color(0xC413161C)     // Matte graphite cards & list rows
-    val cardSurface = Color(0xCC15181F)
     val surfaceFocus = Color(0xEB222731)    // Elevated focused graphite
     val surfaceSelected = Color(0x1CFFFFFF) // Crisp frosted platinum active tint
     val surfaceSheet = Color(0xEB15181F)    // Toast / sheet
     val surfaceDialog = Color(0xF514171E)   // Solid-feeling dark graphite modal
-    val mediaSafe = Color(0xD40B0D12)       // Independent dark scrim over MV video
-    val mediaScrim = Color(0xDC08090C)      // Subtitle pill over MV video
 
     // Subtle metallic hairlines & crisp pure-white specular focus ring
-    val rimLight = Color(0x1EFFFFFF)
-    val rimCool = Color(0x10FFFFFF)
-    val focusRing = Color(0xF5FFFFFF)       // Crisp frosted-white specular edge
     val edgeBottom = Color(0x12FFFFFF)
     val shadowAmbient = Color(0x52000000)
     val shadowSpot = Color(0x78000000)
     val shadowFocus = Color(0x88000000)
-
-    val ambientTop = Color(0xFF14161C)
-    val ambientBottom = Color(0xFF08090C)
 }
 
 internal object GlassShape {
@@ -171,7 +151,6 @@ internal object GlassShape {
 }
 
 internal object TvMotion {
-    val appleEase = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
     val focusSpring = spring<Float>(dampingRatio = 0.82f, stiffness = 460f)
     val subtleSpring = spring<Float>(dampingRatio = 0.86f, stiffness = 460f)
     val dialogSpring = spring<Float>(dampingRatio = 0.84f, stiffness = 380f)

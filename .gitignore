@@ -59,3 +59,9 @@ credentials.*.json
 /.private-release/
 /private-reports/
 *.har
+
+# Local credentials and verification artifacts
+/.docker/
+/.config/gh/
+/.gh/
+/dist/

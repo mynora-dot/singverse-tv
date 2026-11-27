@@ -611,31 +611,6 @@ import java.util.Locale
     }
 }
 
-@Composable private fun SongMetadata(app: TvApp, song: JSONObject?) {
-    if (song == null) return
-    val ids = song.optJSONObject("classification")?.optJSONObject("dimensions")?.optJSONObject("GENRE")?.optJSONArray("tagIds")
-    val genreIds = ids?.let { (0 until it.length()).map { index -> it.optString(index) }.toSet() }.orEmpty()
-    val genres = app.tags.filter { it.optString("id") in genreIds }.map { it.optString("name") }
-    val metadata = tvSongMetadataLabels(song.optString("album"), song.optString("releaseDate"), genres, song.optLong("durationMs").takeIf { it > 0 } ?: app.duration)
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        metadata.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                row.forEach { (label, value) ->
-                    Text(
-                        "$label  $value",
-                        color = Muted,
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
-    }
-}
-
 @Composable private fun PlayerHeader(app: TvApp, audioOnly: Boolean, modifier: Modifier) {
     var clock by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { while (true) { clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()); delay(30000) } }
